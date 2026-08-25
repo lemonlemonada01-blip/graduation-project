@@ -1,0 +1,7 @@
+sentence-transformers>=2.2.2
+chromadb>=0.4.0
+scikit-learn>=1.2.0
+pypdf>=3.0.0
+python-docx>=0.8.11
+pygments>=2.14.0
+psycopg2-binary>=2.9.0

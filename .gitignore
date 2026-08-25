@@ -1,0 +1,50 @@
+# Node
+node_modules/
+dist/
+build/
+.vite/
+
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+venv/
+.venv/
+env/
+
+# Models & Vector DBs
+models/
+.chroma/
+chroma_code_db/
+chroma_multilingual_docs_db/
+*.safetensors
+*.bin
+*.h5
+*.pt
+*.onnx
+
+# Databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Agent & Temp Files
+.agents/
+brain/
+.system_generated/
+scratch/
+.user_uploaded/
+.tempmediaStorage/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Env
+.env
+.claude/
+

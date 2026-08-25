@@ -1,0 +1,6 @@
+{
+  "name": "Secure-FEPRH",
+  "description": "An AI-powered biometric attendance and plagiarism system using React, TypeScript, and Tailwind CSS.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,191 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: rgb(var(--bg-background));
+  --color-surface: rgb(var(--bg-surface));
+  --color-text-main: rgb(var(--text-main));
+  --color-text-muted: rgb(var(--text-muted));
+  --color-glass-border: rgba(var(--glass-border), 0.15);
+  --color-accent: rgb(var(--accent));
+  --color-accent-hover: rgb(var(--accent-hover));
+  --color-accent-light: rgba(var(--accent), 0.15);
+  
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+}
+
+@layer base {
+  :root {
+    /* Light Mode */
+    --bg-background: 248 250 252;
+    --bg-surface: 255 255 255;
+    --text-main: 15 23 42;
+    --text-muted: 100 116 139;
+    --glass-border: 15 23 42;
+    --accent: 79 70 229;
+    --accent-hover: 67 56 202;
+  }
+  
+  .dark {
+    /* Dark Nebula (Premium Dark) */
+    --bg-background: 5 9 20;
+    --bg-surface: 30 41 59;
+    --text-main: 248 250 252;
+    --text-muted: 148 163 184;
+    --glass-border: 148 163 184;
+    --accent: 99 102 241;
+    --accent-hover: 79 70 229;
+  }
+  
+  html, body {
+    @apply h-full w-full m-0 p-0 overflow-hidden font-sans;
+    background-color: var(--color-background);
+    color: var(--color-text-main);
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  html[dir="rtl"] {
+    direction: rtl;
+    text-align: right;
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-text-muted/20 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-text-muted/40;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  #root {
+    @apply h-full w-full flex;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-surface/70 backdrop-blur-md border border-glass-border rounded-2xl text-text-main shadow-lg;
+  }
+  
+  .glass-card {
+    @apply bg-surface/70 backdrop-blur-lg border border-glass-border rounded-xl p-5 flex flex-col text-text-main shadow-md transition-colors;
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-text-muted transition-colors duration-200;
+  }
+  
+  .nav-item:hover {
+    @apply bg-text-muted/10 text-text-main;
+  }
+
+  .nav-item.active {
+    @apply bg-accent-light text-accent;
+  }
+
+  .btn-primary {
+    @apply bg-gradient-to-r from-accent to-accent-hover text-white font-medium rounded-lg px-4 py-2 hover:opacity-90 transition-opacity flex items-center justify-center gap-2;
+  }
+
+  .input-field {
+    @apply bg-surface border border-glass-border rounded-lg px-3 py-2 text-sm text-text-main placeholder-text-muted focus:outline-none focus:ring-1 focus:ring-accent transition-all;
+  }
+
+  @media print {
+    html, body {
+      height: auto !important;
+      overflow: visible !important;
+      background: #ffffff !important;
+      color: #0f172a !important;
+      font-size: 11pt !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    #root {
+      display: block !important;
+      height: auto !important;
+      width: 100% !important;
+      overflow: visible !important;
+      background: #ffffff !important;
+    }
+
+    /* Hide app navigation chrome, sidebars, headers, floating modals, and interactive buttons */
+    aside,
+    header,
+    nav,
+    button,
+    .print\:hidden,
+    [role="region"],
+    [data-radix-popper-content-wrapper],
+    .fixed,
+    .toaster {
+      display: none !important;
+    }
+
+    /* Main report content container */
+    main {
+      display: block !important;
+      position: static !important;
+      overflow: visible !important;
+      padding: 16px !important;
+      margin: 0 !important;
+      width: 100% !important;
+      height: auto !important;
+      background: #ffffff !important;
+    }
+
+    .max-w-7xl {
+      max-width: 100% !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+
+    /* Professional Card styling for paper print */
+    .glass-card, .glass-panel {
+      background: #ffffff !important;
+      border: 1px solid #cbd5e1 !important;
+      color: #0f172a !important;
+      box-shadow: none !important;
+      break-inside: avoid !important;
+      page-break-inside: avoid !important;
+      margin-bottom: 1rem !important;
+      border-radius: 8px !important;
+    }
+
+    /* Text contrast */
+    h1, h2, h3, h4, h5, h6, p, span, div, td, th {
+      color: #0f172a !important;
+      text-shadow: none !important;
+    }
+
+    .text-text-muted {
+      color: #475569 !important;
+    }
+
+    /* Vector chart & badge color preservation */
+    * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+  }
+}
+
+@keyframes dotPulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
