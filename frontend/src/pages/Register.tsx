@@ -32,6 +32,7 @@ export function Register() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
   const [framesPassedForCurrentPose, setFramesPassedForCurrentPose] = useState(0);
+  const noFrameAttempts = useRef(0);
 
   // Active Motion Verification Runner
   useEffect(() => {
@@ -47,6 +48,7 @@ export function Register() {
 
       const frame = webcamRef.current?.getScreenshot();
       if (frame) {
+        noFrameAttempts.current = 0;
         try {
           const res = await biometricsApi.verifyStep(activeChallenge, frame);
           if (res.status === "success") {
@@ -68,6 +70,15 @@ export function Register() {
           }
         } catch (err: any) {
           setStepFeedback(err.message || `Please ${GESTURE_LABELS[activeChallenge]?.title || activeChallenge}...`);
+        }
+      } else {
+        noFrameAttempts.current += 1;
+        if (noFrameAttempts.current >= 5) {
+          const message = "Camera frame unavailable. Please allow camera access and ensure your webcam is connected.";
+          setRegistrationError(message);
+          setStepFeedback(message);
+          setScanState("idle");
+          return;
         }
       }
 
@@ -103,6 +114,7 @@ export function Register() {
     setRegistrationError(null);
     try {
       setScanState("scanning");
+      noFrameAttempts.current = 0;
       setCurrentStepIndex(0);
       setStepFeedback("Initializing 3D spatial challenge...");
       const res = await biometricsApi.getChallenge();
@@ -201,8 +213,13 @@ export function Register() {
             <Webcam
               ref={webcamRef}
               audio={false}
-              mirrored={true}
               screenshotFormat="image/jpeg"
+              onUserMediaError={() => {
+                const message = "Camera access was denied or unavailable. Please allow camera access and try again.";
+                setRegistrationError(message);
+                setStepFeedback(message);
+                setScanState("idle");
+              }}
               className="w-full h-full object-cover"
               videoConstraints={{ facingMode: "user", width: 480, height: 640 }}
             />

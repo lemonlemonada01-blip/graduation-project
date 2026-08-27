@@ -25,7 +25,9 @@ export function Login() {
 
     const imageBase64 = webcamRef.current?.getScreenshot();
     if (!imageBase64) {
-      toast.error("Could not capture frame from webcam. Please ensure camera permissions are allowed.");
+      const message = "Could not capture a webcam frame. Please allow camera access and try again.";
+      setAuthError(message);
+      toast.error(message);
       return;
     }
 
@@ -109,6 +111,11 @@ export function Login() {
               audio={false}
               mirrored={true}
               screenshotFormat="image/jpeg"
+              onUserMediaError={() => {
+                const message = "Camera access was denied or unavailable. Please allow camera access and try again.";
+                setAuthError(message);
+                setScanState("idle");
+              }}
               className="w-full h-full object-cover"
               videoConstraints={{ facingMode: "user", width: 480, height: 640 }}
             />
