@@ -10,6 +10,8 @@ const GESTURE_LABELS: Record<string, { title: string; instruction: string; icon:
   STRAIGHT: { title: "Look Straight", instruction: "Look directly at the camera", icon: "😐" },
   TURN_LEFT: { title: "Turn Head Left", instruction: "Slowly turn your head to your left side", icon: "👈" },
   TURN_RIGHT: { title: "Turn Head Right", instruction: "Slowly turn your head to your right side", icon: "👉" },
+  LOOK_UP: { title: "Look Up", instruction: "Slowly tilt your head upward", icon: "👆" },
+  LOOK_DOWN: { title: "Look Down", instruction: "Slowly tilt your head downward", icon: "👇" },
 };
 
 export function Register() {

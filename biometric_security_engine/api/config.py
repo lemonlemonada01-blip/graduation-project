@@ -1,36 +1,49 @@
-from pydantic_settings import BaseSettings
 from pathlib import Path
 from typing import List
-import os
+
+from pydantic import AliasChoices, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
 class Settings(BaseSettings):
-    # App Settings
+    """Application settings loaded from environment variables or ``.env``.
+
+    ``DATABASE_URL`` is intentionally the canonical environment variable so the
+    same application configuration works with Neon and local PostgreSQL.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
     app_name: str = "Secure-FEPRH Unified AI & Security Engine"
     app_version: str = "2.5.0"
-    
-    # CORS
+
     cors_origins: List[str] = ["*"]
 
-    # Security / JWT
     jwt_secret: str = "super-secret-biometric-key-123"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
-    # Paths & Databases
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/secure_feprh_db"
-    
-    # Biometric Security
-    biometric_encryption_key: str = "Kz1c3u7F_Jv4Qk3-0d9oFqYc1N_P9Q2gW_y0D8C8uG8=" # 32-byte url-safe base64 for Fernet
-    
-    # Biometrics
+    # Accept both DATABASE_URL (recommended) and the Python field name when
+    # running locally. The default targets a local PostgreSQL database.
+    database_url: str = Field(
+        default="postgresql+psycopg2://postgres:postgres@localhost:5432/secure_feprh_db",
+        validation_alias=AliasChoices("DATABASE_URL", "database_url"),
+    )
+    db_pool_size: int = 5
+    db_max_overflow: int = 5
+    db_pool_recycle: int = 1800
+
+    biometric_encryption_key: str = "Kz1c3u7F_Jv4Qk3-0d9oFqYc1N_P9Q2gW_y0D8C8uG8="
     authentication_tolerance: float = 0.45
     minifasnet_model_path: str = "models/minifasnet.onnx"
     max_b64_size_bytes: int = 15 * 1024 * 1024
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = 'utf-8'
 
 settings = Settings()

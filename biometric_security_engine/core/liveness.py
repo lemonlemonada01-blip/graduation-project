@@ -148,7 +148,7 @@ class ActiveLivenessDetector:
     def verify_motion_challenge(cls, landmarks: dict, challenge_type: str, frame_shape: Tuple[int, int] = (480, 640)) -> Dict[str, Any]:
         """
         Verifies if the face in the frame satisfies the requested gesture challenge.
-        Challenge Types: 'BLINK', 'TURN_LEFT', 'TURN_RIGHT', 'NOD'
+        Challenge Types: 'BLINK', 'TURN_LEFT', 'TURN_RIGHT', 'LOOK_UP', 'LOOK_DOWN', 'NOD'
         """
         if challenge_type == "BLINK":
             is_blink = cls.detect_blink(landmarks)
@@ -171,7 +171,10 @@ class ActiveLivenessDetector:
         elif challenge_type == "TURN_RIGHT":
             passed = yaw >= 18.0
             detail = f"Yaw: {yaw:.1f}° (Target: >= +18.0°)"
-        elif challenge_type == "NOD":
+        elif challenge_type == "LOOK_UP":
+            passed = pitch >= 15.0
+            detail = f"Pitch: {pitch:.1f}° (Target: >= +15.0°)"
+        elif challenge_type == "LOOK_DOWN" or challenge_type == "NOD":
             passed = pitch <= -15.0
             detail = f"Pitch: {pitch:.1f}° (Target: <= -15.0°)"
         else:

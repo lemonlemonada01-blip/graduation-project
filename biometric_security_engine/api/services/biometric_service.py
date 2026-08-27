@@ -1,13 +1,24 @@
 import base64
+from pathlib import Path
+
 import cv2
 import numpy as np
 from fastapi import HTTPException
-from core.face_engine import BiometricFaceEngine
-from core.liveness import LivenessDetector, ActiveLivenessDetector
-from ..config import settings
+
+try:
+    from ...core.face_engine import BiometricFaceEngine
+    from ...core.liveness import LivenessDetector, ActiveLivenessDetector
+except ImportError:  # Supports launching with ``api`` as the top-level package.
+    from core.face_engine import BiometricFaceEngine
+    from core.liveness import LivenessDetector, ActiveLivenessDetector
+
+from ..config import BASE_DIR, settings
 
 face_engine = BiometricFaceEngine(authentication_tolerance=settings.authentication_tolerance)
-liveness_detector = LivenessDetector(model_path=settings.minifasnet_model_path)
+_model_path = Path(settings.minifasnet_model_path)
+if not _model_path.is_absolute():
+    _model_path = BASE_DIR / _model_path
+liveness_detector = LivenessDetector(model_path=str(_model_path))
 
 def decode_base64_image(b64_string: str) -> np.ndarray:
     try:

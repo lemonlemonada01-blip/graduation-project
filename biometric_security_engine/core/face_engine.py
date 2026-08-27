@@ -7,9 +7,25 @@ class BiometricFaceEngine:
     """
     High-Accuracy Face Detection & Embedding Extractor (Module 1 & 3).
     """
-    
+
+    EMBEDDING_DIMENSION = 128
+
     def __init__(self, authentication_tolerance: float = 0.45):
         self.authentication_tolerance = authentication_tolerance
+
+    @classmethod
+    def _embedding_array(cls, embedding: List[float]) -> np.ndarray:
+        try:
+            values = np.asarray(embedding, dtype=np.float64)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Stored face embedding is not numeric.") from exc
+        if values.shape != (cls.EMBEDDING_DIMENSION,):
+            raise ValueError(
+                f"Face embedding must contain {cls.EMBEDDING_DIMENSION} values; got {values.size}."
+            )
+        if not np.isfinite(values).all():
+            raise ValueError("Face embedding contains invalid numeric values.")
+        return values
 
     def _normalize_image(self, image: np.ndarray) -> np.ndarray:
         """
@@ -92,9 +108,9 @@ class BiometricFaceEngine:
         Compares two 128D vectors. Returns (is_match, distance).
         Strict tolerance (e.g. 0.45) prevents false positives (twins/lookalikes).
         """
-        live_np = np.array(live_embedding)
-        stored_np = np.array(stored_embedding)
-        
+        live_np = self._embedding_array(live_embedding)
+        stored_np = self._embedding_array(stored_embedding)
+
         # Euclidean distance
         distance = float(np.linalg.norm(live_np - stored_np))
         
@@ -108,12 +124,16 @@ class BiometricFaceEngine:
         best_match_id = None
         best_distance = float('inf')
         
-        live_np = np.array(live_embedding)
-        
+        live_np = self._embedding_array(live_embedding)
+
         for student_id, stored_emb in database.items():
-            stored_np = np.array(stored_emb)
+            try:
+                stored_np = self._embedding_array(stored_emb)
+            except ValueError:
+                # Ignore corrupt legacy rows and continue searching valid data.
+                continue
             distance = float(np.linalg.norm(live_np - stored_np))
-            
+
             if distance < best_distance:
                 best_distance = distance
                 best_match_id = student_id
