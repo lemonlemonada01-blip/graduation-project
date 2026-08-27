@@ -1,0 +1,3 @@
+# Optional example: run every weekday at 09:00.
+# Edit the path and task, then install with: crontab -e
+# 0 9 * * 1-5 /home/you/graduation-project/local_agent/scripts/run_task.sh --yes "Inspect the workspace and report failing tests" >> /home/you/agent.log 2>&1
