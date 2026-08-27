@@ -1,5 +1,0 @@
-.env
-.agent_state/
-.venv/
-__pycache__/
-*.py[cod]
