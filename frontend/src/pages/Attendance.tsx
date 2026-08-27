@@ -164,6 +164,16 @@ export function Attendance() {
     return `${m}:${s}`;
   };
 
+  const captureFrameBurst = async (count = 5, intervalMs = 160) => {
+    const frames: string[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const frame = webcamRef.current?.getScreenshot();
+      if (frame) frames.push(frame);
+      if (index < count - 1) await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+    }
+    return frames;
+  };
+
   const handleStartLivenessCheck = async () => {
     if (isVerifying) return;
     setIsVerifying(true);
@@ -181,10 +191,11 @@ export function Attendance() {
     setTimeout(async () => {
       setLivenessState(sequence[4]);
       
-      const activeScreenshot = webcamRef.current?.getScreenshot() || screenshot;
+      const framesBase64 = await captureFrameBurst();
+      const activeScreenshot = framesBase64[framesBase64.length - 1] || screenshot;
       if (activeScreenshot) {
         try {
-          const res = await biometricsApi.identify(activeScreenshot);
+          const res = await biometricsApi.identify(activeScreenshot, framesBase64);
           if (res.authenticated && res.student_id) {
             const score = res.distance !== undefined ? ((1 - res.distance) * 100).toFixed(1) : "99.8";
             const verifiedMethod = `3D Biometric Verified ${score}%`;
@@ -225,12 +236,13 @@ export function Attendance() {
     setIsVerifying(true);
     setLivenessState("verifying");
     
-    const screenshot = webcamRef.current?.getScreenshot();
+    const framesBase64 = await captureFrameBurst();
+    const screenshot = framesBase64[framesBase64.length - 1];
     let verifiedMethod = "Fast Face ID";
 
     if (screenshot) {
       try {
-        const res = await biometricsApi.identify(screenshot);
+        const res = await biometricsApi.identify(screenshot, framesBase64);
         if (res.authenticated && res.student_id) {
           const confidence = res.distance !== undefined ? `${((1 - res.distance) * 100).toFixed(1)}%` : "99.8%";
           verifiedMethod = `Fast Face ID (${confidence})`;

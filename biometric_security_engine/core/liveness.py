@@ -151,12 +151,11 @@ class ActiveLivenessDetector:
         Challenge Types: 'BLINK', 'TURN_LEFT', 'TURN_RIGHT', 'LOOK_UP', 'LOOK_DOWN', 'NOD'
         """
         if challenge_type == "BLINK":
-            is_blink = cls.detect_blink(landmarks)
-            if is_blink:
-                cls.blink_counter += 1
-            # Require 2 frames of blink for safety, or just 1? Instruction says "Reduce required consecutive frames from 3 to 2"
-            passed = cls.blink_counter >= 2
-            return {"passed": passed, "angles": {}, "detail": "Blink verified" if passed else "Blinking..."}
+            # The caller owns the temporal stability rule and requires two
+            # successful responses. Keeping this check stateless avoids a
+            # process-global counter leaking between users or browser tabs.
+            passed = cls.detect_blink(landmarks)
+            return {"passed": passed, "angles": {}, "detail": "Blink detected" if passed else "Blink once"}
 
         angles = cls.estimate_head_pose(landmarks, frame_shape)
         yaw = angles["yaw"]
@@ -166,32 +165,52 @@ class ActiveLivenessDetector:
         detail = ""
 
         if challenge_type == "TURN_LEFT":
-            passed = yaw <= -18.0
-            detail = f"Yaw: {yaw:.1f}° (Target: <= -18.0°)"
+            passed = yaw <= -15.0
+            detail = f"Yaw: {yaw:.1f}° (Target: <= -15.0°)"
         elif challenge_type == "TURN_RIGHT":
-            passed = yaw >= 18.0
-            detail = f"Yaw: {yaw:.1f}° (Target: >= +18.0°)"
+            passed = yaw >= 15.0
+            detail = f"Yaw: {yaw:.1f}° (Target: >= +15.0°)"
         elif challenge_type == "LOOK_UP":
-            passed = pitch >= 15.0
-            detail = f"Pitch: {pitch:.1f}° (Target: >= +15.0°)"
+            passed = pitch >= 12.0
+            detail = f"Pitch: {pitch:.1f}° (Target: >= +12.0°)"
         elif challenge_type == "LOOK_DOWN" or challenge_type == "NOD":
-            passed = pitch <= -15.0
-            detail = f"Pitch: {pitch:.1f}° (Target: <= -15.0°)"
+            passed = pitch <= -12.0
+            detail = f"Pitch: {pitch:.1f}° (Target: <= -12.0°)"
         else:
             detail = f"Unknown challenge type: {challenge_type}"
 
-        if passed:
-            cls.consecutive_frames += 1
-        else:
-            cls.consecutive_frames = 0
-
-        # Require 2 consecutive frames
-        final_passed = cls.consecutive_frames >= 2
-
         return {
-            "passed": final_passed,
+            "passed": passed,
+
             "angles": angles,
             "detail": detail
+        }
+
+    @staticmethod
+    def verify_circular_sequence(angles_sequence: List[Dict[str, float]]) -> Dict[str, Any]:
+        """Validate a short head-pose trajectory without requiring a fixed path.
+
+        A live circular motion should move through more than one pose axis and
+        cover a meaningful angular span. This is intentionally tolerant of
+        dropped frames and camera mirroring; the endpoint remains available for
+        clients that explicitly collect a frame sequence.
+        """
+        if len(angles_sequence) < 4:
+            return {"passed": False, "detail": "Capture at least four motion frames."}
+        try:
+            yaw = np.asarray([float(item.get("yaw", 0.0)) for item in angles_sequence])
+            pitch = np.asarray([float(item.get("pitch", 0.0)) for item in angles_sequence])
+        except (TypeError, ValueError):
+            return {"passed": False, "detail": "Motion angles are invalid."}
+        if not np.isfinite(yaw).all() or not np.isfinite(pitch).all():
+            return {"passed": False, "detail": "Motion angles are invalid."}
+        yaw_span = float(yaw.max() - yaw.min())
+        pitch_span = float(pitch.max() - pitch.min())
+        travelled = float(np.abs(np.diff(yaw)).sum() + np.abs(np.diff(pitch)).sum())
+        passed = (yaw_span >= 22.0 and pitch_span >= 12.0) or travelled >= 55.0
+        return {
+            "passed": passed,
+            "detail": "Circular motion detected." if passed else "Move your head smoothly through a wider circle.",
         }
 
     @staticmethod

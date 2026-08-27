@@ -105,17 +105,18 @@ export const biometricsApi = {
       }
     ),
 
-  register: (studentId: string, imageBase64: string, livenessToken: string) =>
+  register: (studentId: string, imageBase64: string, livenessToken: string, framesBase64: string[] = []) =>
     apiFetch<{ status: string; message: string }>("/api/biometrics/register", {
       method: "POST",
       body: JSON.stringify({
         student_id: studentId,
         image_base64: imageBase64,
+        frames_base64: framesBase64,
         liveness_token: livenessToken,
       }),
     }),
 
-  authenticate: (studentId: string, imageBase64: string) =>
+  authenticate: (studentId: string, imageBase64: string, framesBase64: string[] = []) =>
     apiFetch<{
       authenticated: boolean;
       token: string;
@@ -129,16 +130,17 @@ export const biometricsApi = {
         body: JSON.stringify({
           student_id: studentId,
           image_base64: imageBase64,
+          frames_base64: framesBase64,
         }),
       }
     ),
 
-  identify: (imageBase64: string) =>
+  identify: (imageBase64: string, framesBase64: string[] = []) =>
     apiFetch<{ authenticated: boolean; student_id?: string; student_name?: string; distance?: number; message?: string }>(
       "/api/biometrics/identify",
       {
         method: "POST",
-        body: JSON.stringify({ image_base64: imageBase64 }),
+        body: JSON.stringify({ image_base64: imageBase64, frames_base64: framesBase64 }),
       }
     ),
 };

@@ -35,7 +35,13 @@ export function Login() {
     setScanState("scanning");
 
     try {
-      const response = await biometricsApi.authenticate(email.trim(), imageBase64);
+      const framesBase64 = [imageBase64];
+      for (let index = 0; index < 4; index += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 180));
+        const nextFrame = webcamRef.current?.getScreenshot();
+        if (nextFrame) framesBase64.push(nextFrame);
+      }
+      const response = await biometricsApi.authenticate(email.trim(), imageBase64, framesBase64);
       if (response.authenticated) {
         setScanState("success");
         if (response.token) {

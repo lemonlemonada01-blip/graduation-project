@@ -47,9 +47,12 @@ def _find_user_for_student_id(db: Session, student_id: str):
 
 @router.get("/challenge/generate")
 def generate_motion_challenge():
+    # The browser wizard verifies pose challenges frame-by-frame. Circular
+    # motion remains available through its dedicated endpoint, but it is not
+    # mixed into the default wizard because that endpoint needs a frame
+    # sequence rather than a single verify_step request.
     all_gestures = ["TURN_LEFT", "TURN_RIGHT", "LOOK_UP", "LOOK_DOWN"]
     selected = random.sample(all_gestures, 2)
-    selected.append("CIRCULAR_MOTION")
     return {"challenges": selected}
 
 
@@ -91,6 +94,7 @@ def verify_circular_motion(payload: CircularChallengePayload):
 def register_face(
     student_id: str = Body(...),
     image_base64: str = Body(...),
+    frames_base64: list[str] | None = Body(None),
     liveness_token: str | None = Body(None),
     db: Session = Depends(get_db),
 ):
@@ -99,8 +103,14 @@ def register_face(
         raise HTTPException(status_code=403, detail="Liveness verification required. Please complete the 3D Motion Challenge first.")
 
     frame = biometric_service.decode_base64_image(image_base64)
+    frames = [frame]
+    for encoded_frame in frames_base64 or []:
+        frames.append(biometric_service.decode_base64_image(encoded_frame))
     try:
-        embedding, _, _ = biometric_service.register_student_face(frame)
+        if frames_base64:
+            embedding, _, _ = biometric_service.register_student_face_frames(frames)
+        else:
+            embedding, _, _ = biometric_service.register_student_face(frame)
         encrypted_embedding = biometric_service.encrypt_vector(embedding)
 
         from ..database.models import StudentBiometric
@@ -142,7 +152,11 @@ def authenticate_face(payload: FaceLoginRequest, db: Session = Depends(get_db)):
     try:
         stored_embedding = biometric_service.decrypt_vector(row.encrypted_embedding)
         frame = biometric_service.decode_base64_image(payload.image_base64)
-        is_match, distance = biometric_service.verify_student_face(frame, stored_embedding)
+        if payload.frames_base64:
+            frames = [frame] + [biometric_service.decode_base64_image(encoded_frame) for encoded_frame in payload.frames_base64]
+            is_match, distance, _ = biometric_service.verify_student_face_frames(frames, stored_embedding)
+        else:
+            is_match, distance = biometric_service.verify_student_face(frame, stored_embedding)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -172,6 +186,7 @@ def authenticate_face(payload: FaceLoginRequest, db: Session = Depends(get_db)):
 def identify_face(payload: ImagePayload, db: Session = Depends(get_db)):
     try:
         frame = biometric_service.decode_base64_image(payload.image_base64)
+        frames = [frame] + [biometric_service.decode_base64_image(encoded_frame) for encoded_frame in (payload.frames_base64 or [])]
     except HTTPException as exc:
         return {"authenticated": False, "student_id": None, "student_name": None, "distance": None, "message": exc.detail}
 
@@ -196,7 +211,10 @@ def identify_face(payload: ImagePayload, db: Session = Depends(get_db)):
         return {"authenticated": False, "student_id": None, "student_name": None, "distance": None, "message": "No valid students registered in biometric database."}
 
     try:
-        result = biometric_service.identify_student_face(frame, database)
+        if payload.frames_base64:
+            result = biometric_service.identify_student_face_frames(frames, database)
+        else:
+            result = biometric_service.identify_student_face(frame, database)
     except ValueError as exc:
         return {"authenticated": False, "student_id": None, "student_name": None, "distance": None, "message": str(exc)}
 

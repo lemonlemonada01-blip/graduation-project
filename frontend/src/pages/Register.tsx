@@ -37,6 +37,7 @@ export function Register() {
   const frameCountRef = useRef(0);
   const requestInFlight = useRef(false);
   const transientFailures = useRef(0);
+  const acceptedFramesRef = useRef<string[]>([]);
 
   // Active Motion Verification Runner. A single in-flight request is allowed
   // at a time, which prevents slow model inference from creating a backlog of
@@ -97,6 +98,8 @@ export function Register() {
         transientFailures.current = 0;
 
         if (response.status === "success") {
+          acceptedFramesRef.current.push(frame);
+          if (acceptedFramesRef.current.length > 12) acceptedFramesRef.current.shift();
           frameCountRef.current += 1;
           const frameCount = frameCountRef.current;
           setFramesPassedForCurrentPose(frameCount);
@@ -143,7 +146,11 @@ export function Register() {
     } else {
       // All challenges completed!
       const finalSnap = webcamRef.current?.getScreenshot();
-      setCapturedImageBase64(finalSnap || null);
+      if (finalSnap) {
+        acceptedFramesRef.current.push(finalSnap);
+        if (acceptedFramesRef.current.length > 12) acceptedFramesRef.current.shift();
+      }
+      setCapturedImageBase64(finalSnap || acceptedFramesRef.current[acceptedFramesRef.current.length - 1] || null);
       setLivenessToken("motion_verified");
       setScanState("success");
       toast.success("🎉 All 3D Motion Challenges Passed! Biometric profile ready.");
@@ -157,6 +164,7 @@ export function Register() {
       noFrameAttempts.current = 0;
       transientFailures.current = 0;
       frameCountRef.current = 0;
+      acceptedFramesRef.current = [];
       requestInFlight.current = false;
       setFramesPassedForCurrentPose(0);
       setCurrentStepIndex(0);
@@ -188,7 +196,7 @@ export function Register() {
     setIsSubmitting(true);
     try {
       // 1. Register face biometrics with verified liveness token
-      await biometricsApi.register(email.trim(), capturedImageBase64, livenessToken);
+      await biometricsApi.register(email.trim(), capturedImageBase64, livenessToken, acceptedFramesRef.current);
 
       // 2. Provision User account & RBAC role
       await usersApi.provision({

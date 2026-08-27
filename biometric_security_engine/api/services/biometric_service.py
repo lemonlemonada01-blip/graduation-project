@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import cv2
 import numpy as np
@@ -80,14 +80,111 @@ def register_student_face(frame: np.ndarray):
     return face_engine.extract_face(frame, strict_quality=True)
 
 
+def _aggregate_embeddings(embeddings: Sequence[list[float]]) -> list[float]:
+    """Build a robust enrollment vector from several good video frames.
+
+    Embeddings are normalized before a median-centre outlier filter and a mean
+    aggregation. This prevents one blurred or poorly aligned frame from
+    dominating the stored biometric template.
+    """
+    if not embeddings:
+        raise ValueError("No usable face frames were found.")
+    matrix = np.asarray([face_engine._embedding_array(value) for value in embeddings], dtype=np.float64)
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    if np.any(norms == 0):
+        raise ValueError("A face embedding has zero magnitude.")
+    normalized = matrix / norms
+    centre = np.median(normalized, axis=0)
+    centre_norm = np.linalg.norm(centre)
+    if centre_norm == 0:
+        raise ValueError("Unable to build a stable biometric template.")
+    centre /= centre_norm
+    consistency = normalized @ centre
+    keep_count = min(len(normalized), max(2, min(5, len(normalized))))
+    keep = np.argsort(consistency)[-keep_count:]
+    aggregate = normalized[keep].mean(axis=0)
+    aggregate_norm = np.linalg.norm(aggregate)
+    if aggregate_norm == 0:
+        raise ValueError("Unable to build a stable biometric template.")
+    return (aggregate / aggregate_norm).astype(np.float64).tolist()
+
+
+def _extract_video_embeddings(
+    frames: Sequence[np.ndarray],
+    *,
+    minimum_frames: int,
+    strict_quality: bool,
+) -> tuple[list[list[float]], tuple[int, int, int, int], dict[str, Any]]:
+    if not frames:
+        raise ValueError("At least one camera frame is required.")
+    if len(frames) > 20:
+        raise ValueError("A maximum of 20 video frames may be submitted.")
+
+    accepted: list[list[float]] = []
+    best_box: tuple[int, int, int, int] | None = None
+    passive_checked = 0
+    passive_passed = 0
+    for frame in frames:
+        try:
+            embedding, face_box, _ = face_engine.extract_face(frame, strict_quality=strict_quality)
+            if getattr(liveness_detector, "net", None) is not None:
+                passive_checked += 1
+                is_live, _score = liveness_detector.verify_liveness(frame, face_box)
+                if not is_live:
+                    continue
+                passive_passed += 1
+            accepted.append(embedding)
+            if best_box is None:
+                best_box = face_box
+        except (RuntimeError, ValueError):
+            continue
+
+    if len(accepted) < minimum_frames:
+        raise ValueError(
+            f"Only {len(accepted)} usable face frames were found; capture at least {minimum_frames} clear frames."
+        )
+    return accepted, best_box or (0, 1, 1, 0), {
+        "accepted_frames": len(accepted),
+        "submitted_frames": len(frames),
+        "passive_liveness_checked": passive_checked,
+        "passive_liveness_passed": passive_passed,
+    }
+
+
+def register_student_face_frames(frames: Sequence[np.ndarray]):
+    embeddings, face_box, metadata = _extract_video_embeddings(frames, minimum_frames=3, strict_quality=True)
+    return _aggregate_embeddings(embeddings), face_box, metadata
+
+
 def verify_student_face(live_frame: np.ndarray, stored_embedding: list[float]):
     live_embedding, _, _ = face_engine.extract_face(live_frame, strict_quality=False)
     return face_engine.verify_identity(live_embedding, stored_embedding)
 
 
+def verify_student_face_frames(frames: Sequence[np.ndarray], stored_embedding: list[float]):
+    embeddings, _face_box, metadata = _extract_video_embeddings(frames, minimum_frames=2, strict_quality=True)
+    aggregate = _aggregate_embeddings(embeddings)
+    matched, distance = face_engine.verify_identity(aggregate, stored_embedding)
+    if not matched:
+        frame_results = [face_engine.verify_identity(embedding, stored_embedding) for embedding in embeddings]
+        passing = sum(1 for frame_match, _ in frame_results if frame_match)
+        matched = passing >= max(2, (len(frame_results) + 1) // 2)
+        distance = min([distance, *[frame_distance for _match, frame_distance in frame_results]])
+    metadata["matched"] = matched
+    return matched, distance, metadata
+
+
 def identify_student_face(live_frame: np.ndarray, database: dict[str, list[float]]):
     live_embedding, _, _ = face_engine.extract_face(live_frame, strict_quality=False)
     return face_engine.search_1_to_n(live_embedding, database)
+
+
+def identify_student_face_frames(frames: Sequence[np.ndarray], database: dict[str, list[float]]):
+    embeddings, _face_box, metadata = _extract_video_embeddings(frames, minimum_frames=2, strict_quality=True)
+    aggregate = _aggregate_embeddings(embeddings)
+    result = face_engine.search_1_to_n(aggregate, database)
+    result["frame_metadata"] = metadata
+    return result
 
 
 def _validated_embedding(embedding: list[float] | np.ndarray) -> list[float]:
