@@ -32,12 +32,22 @@ export function Register() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [registrationError, setRegistrationError] = useState<string | null>(null);
   const [framesPassedForCurrentPose, setFramesPassedForCurrentPose] = useState(0);
+  const [cameraReady, setCameraReady] = useState(false);
   const noFrameAttempts = useRef(0);
+  const frameCountRef = useRef(0);
+  const requestInFlight = useRef(false);
+  const transientFailures = useRef(0);
 
-  // Active Motion Verification Runner
+  // Active Motion Verification Runner. A single in-flight request is allowed
+  // at a time, which prevents slow model inference from creating a backlog of
+  // stale frames and makes the UX behave like a real video session.
   useEffect(() => {
-    let timer: NodeJS.Timeout | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     let isCancelled = false;
+
+    const scheduleNext = (run: () => void) => {
+      if (!isCancelled) timer = setTimeout(run, 450);
+    };
 
     async function runVerificationLoop() {
       if (scanState !== "scanning" || challenges.length === 0 || currentStepIndex >= challenges.length) {
@@ -45,57 +55,87 @@ export function Register() {
       }
 
       const activeChallenge = challenges[currentStepIndex];
+      if (!cameraReady) {
+        noFrameAttempts.current += 1;
+        if (noFrameAttempts.current >= 12) {
+          const message = "Camera is not ready. Allow camera access, close other camera apps, and try again.";
+          setRegistrationError(message);
+          setStepFeedback(message);
+          setScanState("idle");
+          return;
+        }
+        setStepFeedback("Starting camera… keep your face in view.");
+        scheduleNext(runVerificationLoop);
+        return;
+      }
 
       const frame = webcamRef.current?.getScreenshot();
-      if (frame) {
-        noFrameAttempts.current = 0;
-        try {
-          const res = await biometricsApi.verifyStep(activeChallenge, frame);
-          if (res.status === "success") {
-            setFramesPassedForCurrentPose((prev) => {
-              const newCount = prev + 1;
-              if (newCount >= 2) {
-                setStepFeedback(`✅ ${activeChallenge} Verified!`);
-                advanceChallenge();
-                return 0; // reset for next
-              } else {
-                setStepFeedback(`✅ Frame ${newCount}/2 captured! Hold still...`);
-                return newCount;
-              }
-            });
-            if (!isCancelled && scanState === "scanning") {
-              timer = setTimeout(runVerificationLoop, 300);
-            }
-            return;
-          }
-        } catch (err: any) {
-          setStepFeedback(err.message || `Please ${GESTURE_LABELS[activeChallenge]?.title || activeChallenge}...`);
-        }
-      } else {
+      if (!frame) {
         noFrameAttempts.current += 1;
-        if (noFrameAttempts.current >= 5) {
+        if (noFrameAttempts.current >= 8) {
           const message = "Camera frame unavailable. Please allow camera access and ensure your webcam is connected.";
           setRegistrationError(message);
           setStepFeedback(message);
           setScanState("idle");
           return;
         }
+        setStepFeedback("Waiting for a stable camera frame…");
+        scheduleNext(runVerificationLoop);
+        return;
       }
 
-      if (!isCancelled && scanState === "scanning") {
-        timer = setTimeout(runVerificationLoop, 300);
+      noFrameAttempts.current = 0;
+      if (requestInFlight.current) {
+        scheduleNext(runVerificationLoop);
+        return;
       }
+
+      requestInFlight.current = true;
+      try {
+        const response = await biometricsApi.verifyStep(activeChallenge, frame);
+        if (isCancelled) return;
+        transientFailures.current = 0;
+
+        if (response.status === "success") {
+          frameCountRef.current += 1;
+          const frameCount = frameCountRef.current;
+          setFramesPassedForCurrentPose(frameCount);
+          setStepFeedback(`✅ Frame ${frameCount}/2 captured — hold still...`);
+          if (frameCount >= 2) {
+            frameCountRef.current = 0;
+            setFramesPassedForCurrentPose(0);
+            setStepFeedback(`✅ ${activeChallenge} verified`);
+            advanceChallenge();
+            return;
+          }
+        } else {
+          frameCountRef.current = 0;
+          setFramesPassedForCurrentPose(0);
+          setStepFeedback(response.detail || `Please ${GESTURE_LABELS[activeChallenge]?.title || activeChallenge}...`);
+        }
+      } catch (err: any) {
+        if (isCancelled) return;
+        transientFailures.current += 1;
+        const message = err?.message || "Frame verification is temporarily unavailable.";
+        setStepFeedback(message);
+        if (transientFailures.current >= 5) {
+          setRegistrationError("The camera verification service is not responding. Please retry the challenge.");
+          setScanState("idle");
+          return;
+        }
+      } finally {
+        requestInFlight.current = false;
+      }
+
+      scheduleNext(runVerificationLoop);
     }
 
-    if (scanState === "scanning") {
-      runVerificationLoop();
-    }
-
+    if (scanState === "scanning") runVerificationLoop();
     return () => {
       isCancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [scanState, currentStepIndex, challenges]);
+  }, [scanState, currentStepIndex, challenges, cameraReady]);
 
   const advanceChallenge = () => {
     if (currentStepIndex + 1 < challenges.length) {
@@ -115,6 +155,10 @@ export function Register() {
     try {
       setScanState("scanning");
       noFrameAttempts.current = 0;
+      transientFailures.current = 0;
+      frameCountRef.current = 0;
+      requestInFlight.current = false;
+      setFramesPassedForCurrentPose(0);
       setCurrentStepIndex(0);
       setStepFeedback("Initializing 3D spatial challenge...");
       const res = await biometricsApi.getChallenge();
@@ -206,29 +250,42 @@ export function Register() {
             </div>
           )}
 
-          <div 
-            className="relative w-full max-w-[300px] aspect-[3/4] overflow-hidden rounded-[50%] bg-black/80 ring-1 ring-glass-border shadow-2xl transition-all"
+          <div
+            className="relative w-full max-w-[560px] aspect-[4/3] overflow-hidden rounded-2xl bg-black/80 ring-1 ring-glass-border shadow-2xl transition-all"
           >
             {/* Webcam Feed */}
             <Webcam
               ref={webcamRef}
               audio={false}
               screenshotFormat="image/jpeg"
+              screenshotQuality={0.72}
+              onUserMedia={() => {
+                noFrameAttempts.current = 0;
+                setCameraReady(true);
+                setRegistrationError(null);
+              }}
+              onPlay={() => setCameraReady(true)}
               onUserMediaError={() => {
                 const message = "Camera access was denied or unavailable. Please allow camera access and try again.";
+                setCameraReady(false);
                 setRegistrationError(message);
                 setStepFeedback(message);
                 setScanState("idle");
               }}
               className="w-full h-full object-cover"
-              videoConstraints={{ facingMode: "user", width: 480, height: 640 }}
+              videoConstraints={{
+                facingMode: "user",
+                width: { ideal: 1280, max: 1920 },
+                height: { ideal: 960, max: 1440 },
+                frameRate: { ideal: 15, max: 24 },
+              }}
             />
 
             {/* Scanner Overlay Box */}
             <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none p-4">
-              <div className={`w-full h-full border-2 border-dashed transition-colors duration-500 relative flex items-center justify-center ${
+              <div className={`w-full h-full rounded-xl border-2 border-dashed transition-colors duration-500 relative flex items-center justify-center ${
                   scanState === "success" ? "border-success bg-success/10" : "border-accent/50"
-              }`} style={{ borderRadius: "50%" }}>
+             }`}>
                 
                 {/* Laser Scan Line */}
                 {scanState === "scanning" && (
@@ -244,7 +301,7 @@ export function Register() {
                 {scanState === "scanning" && (
                   <motion.div
                     className="absolute inset-0 bg-accent/20"
-                    style={{ borderRadius: "50%" }}
+                    style={{ borderRadius: "0.75rem" }}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: [0, 0.4, 0] }}
                     transition={{ duration: 1, repeat: Infinity }}

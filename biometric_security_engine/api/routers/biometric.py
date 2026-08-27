@@ -59,11 +59,11 @@ def verify_motion_step(payload: StepChallengePayload):
     try:
         result = biometric_service.verify_motion(frame, payload.challenge_type)
         if not result["passed"]:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Motion Challenge '{payload.challenge_type}' Failed. {result['detail']}",
-            )
-        return {"status": "success", "detail": result["detail"], "angles": result["angles"]}
+            # A normal frame while the user is moving is not an API failure.
+            # Returning 200 prevents the browser stream from throwing and
+            # retrying the same frame as an error on every poll.
+            return {"status": "in_progress", "detail": result["detail"], "angles": result.get("angles", {})}
+        return {"status": "success", "detail": result["detail"], "angles": result.get("angles", {})}
     except HTTPException:
         raise
     except ValueError as exc:

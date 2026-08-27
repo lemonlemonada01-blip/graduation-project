@@ -14,6 +14,7 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
 
   const handleBiometricLogin = async () => {
     setAuthError(null);
@@ -100,10 +101,13 @@ export function Login() {
               Biometric Login
             </h2>
             <p className="text-sm text-text-muted mt-2">Position your face within the frame to verify identity</p>
+            <p className="text-[11px] text-accent/80 mt-1" aria-live="polite">
+              {cameraReady ? "Camera ready — keep your face centered" : "Starting camera…"}
+            </p>
           </div>
 
-          <div 
-            className="relative w-full max-w-[300px] aspect-[3/4] overflow-hidden rounded-[50%] bg-black/80 ring-1 ring-glass-border shadow-2xl mx-auto"
+          <div
+            className="relative w-full max-w-[560px] aspect-[4/3] overflow-hidden rounded-2xl bg-black/80 ring-1 ring-glass-border shadow-2xl mx-auto"
           >
             {/* Webcam Feed */}
             <Webcam
@@ -111,20 +115,29 @@ export function Login() {
               audio={false}
               mirrored={true}
               screenshotFormat="image/jpeg"
+              screenshotQuality={0.78}
+              onUserMedia={() => setCameraReady(true)}
+              onPlay={() => setCameraReady(true)}
               onUserMediaError={() => {
                 const message = "Camera access was denied or unavailable. Please allow camera access and try again.";
+                setCameraReady(false);
                 setAuthError(message);
                 setScanState("idle");
               }}
               className="w-full h-full object-cover"
-              videoConstraints={{ facingMode: "user", width: 480, height: 640 }}
+              videoConstraints={{
+                facingMode: "user",
+                width: { ideal: 1280, max: 1920 },
+                height: { ideal: 960, max: 1440 },
+                frameRate: { ideal: 15, max: 24 },
+              }}
             />
 
             {/* Scanner Overlay Box */}
             <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none p-4">
-              <div className={`w-full h-full border-2 border-dashed transition-colors duration-500 relative flex items-center justify-center ${
+              <div className={`w-full h-full rounded-xl border-2 border-dashed transition-colors duration-500 relative flex items-center justify-center ${
                   scanState === "success" ? "border-success bg-success/10" : "border-accent/50"
-              }`} style={{ borderRadius: "50%" }}>
+              }`}>
                 
                 {/* Laser Scan Line */}
                 {scanState === "scanning" && (
@@ -139,8 +152,7 @@ export function Login() {
                 {/* Pulsating dots for active scanning */}
                 {scanState === "scanning" && (
                   <motion.div
-                    className="absolute inset-0 bg-accent/10"
-                    style={{ borderRadius: "50%" }}
+                    className="absolute inset-0 rounded-xl bg-accent/10"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: [0, 0.3, 0] }}
                     transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}

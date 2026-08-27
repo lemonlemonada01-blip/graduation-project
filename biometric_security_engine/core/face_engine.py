@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import cv2
@@ -8,8 +9,10 @@ import numpy as np
 
 _DEEPFACE: Any | None = None
 _DEEPFACE_IMPORT_ERROR: Exception | None = None
-_RETINAFACE: Any | None = None
-_RETINAFACE_IMPORT_ERROR: Exception | None = None
+_YUNET: Any | None = None
+_YUNET_IMPORT_ERROR: Exception | None = None
+_YUNET_MODEL_PATH = Path(__file__).resolve().parents[1] / "models" / "face_detection_yunet_2023mar.onnx"
+_YUNET_MODEL_URL = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
 _MODEL_LOCK = threading.Lock()
 
 FaceBox = Tuple[int, int, int, int]  # top, right, bottom, left
@@ -19,8 +22,8 @@ class BiometricFaceEngine:
     """Face detection, liveness landmarks, and SFace embedding extraction.
 
     SFace is a modern 128-dimensional embedding model exposed by DeepFace.
-    RetinaFace supplies the five-point detector landmarks used to preserve the
-    application's active head-pose contract. Both components use prebuilt
+    OpenCV YuNet supplies fast five-point detector landmarks used to preserve
+    the application's active head-pose contract. Both components use prebuilt
     Python 3.12-compatible wheels and avoid native C++ compilation.
     """
 
@@ -94,64 +97,101 @@ class BiometricFaceEngine:
             return _DEEPFACE
 
     @staticmethod
-    def _load_retinaface() -> Any:
-        global _RETINAFACE, _RETINAFACE_IMPORT_ERROR
-        if _RETINAFACE is not None:
-            return _RETINAFACE
-        if _RETINAFACE_IMPORT_ERROR is not None:
-            raise RuntimeError(
-                "RetinaFace is required for biometric landmarks. Install the Python 3.12 dependencies "
-                "from requirements.txt and restart the API."
-            ) from _RETINAFACE_IMPORT_ERROR
+    def _load_yunet() -> Any | None:
+        global _YUNET, _YUNET_IMPORT_ERROR
+        if _YUNET is not None:
+            return _YUNET
+        if _YUNET_IMPORT_ERROR is not None:
+            return None
         with _MODEL_LOCK:
-            if _RETINAFACE is not None:
-                return _RETINAFACE
+            if _YUNET is not None:
+                return _YUNET
             try:
-                from retinaface import RetinaFace
+                if not _YUNET_MODEL_PATH.exists():
+                    _YUNET_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    from urllib.request import urlretrieve
+                    urlretrieve(_YUNET_MODEL_URL, _YUNET_MODEL_PATH)
+                _YUNET = cv2.FaceDetectorYN_create(
+                    str(_YUNET_MODEL_PATH), "", (320, 320), 0.60, 0.30, 5000
+                )
             except Exception as exc:
-                _RETINAFACE_IMPORT_ERROR = exc
-                raise RuntimeError(
-                    "RetinaFace could not be imported. Install the Python 3.12-compatible biometric dependencies "
-                    "from requirements.txt."
-                ) from exc
-            _RETINAFACE = RetinaFace
-            return _RETINAFACE
-
-    def _represent(self, image: np.ndarray) -> List[Dict[str, Any]]:
-        deepface = self._load_deepface()
-        try:
-            records = deepface.represent(
-                img_path=image,
-                model_name=self.model_name,
-                detector_backend=self.detector_backend,
-                enforce_detection=True,
-                align=True,
-                normalization="base",
-            )
-        except Exception as exc:
-            message = str(exc).lower()
-            if "face" in message and ("detect" in message or "found" in message):
-                raise ValueError("No face detected in the image.") from exc
-            raise ValueError(f"Face embedding extraction failed: {exc}") from exc
-
-        if isinstance(records, dict):
-            records = [records]
-        if not isinstance(records, list):
-            raise ValueError("Face embedding extraction returned an invalid response.")
-        records = [record for record in records if isinstance(record, dict)]
-        if not records:
-            raise ValueError("No face detected in the image.")
-        return records
+                _YUNET_IMPORT_ERROR = exc
+                return None
+            return _YUNET
 
     def _detect_landmarks(self, image: np.ndarray) -> List[Dict[str, Any]]:
-        retinaface = self._load_retinaface()
-        try:
-            detected = retinaface.detect_faces(image)
-        except Exception as exc:
-            raise ValueError(f"Face landmark extraction failed: {exc}") from exc
-        if not isinstance(detected, dict):
-            return []
-        return [record for record in detected.values() if isinstance(record, dict)]
+        height, width = image.shape[:2]
+        detector = self._load_yunet()
+        if detector is not None:
+            detector.setInputSize((width, height))
+            _, faces = detector.detect(image)
+            output: List[Dict[str, Any]] = []
+            for face in faces if faces is not None else []:
+                row = np.asarray(face, dtype=np.float32).reshape(-1)
+                if row.size < 15:
+                    continue
+                x, y, box_width, box_height = row[:4]
+                output.append({
+                    "facial_area": [int(x), int(y), int(x + box_width), int(y + box_height)],
+                    "landmarks": {
+                        "right_eye": [float(row[4]), float(row[5])],
+                        "left_eye": [float(row[6]), float(row[7])],
+                        "nose": [float(row[8]), float(row[9])],
+                        "mouth_right": [float(row[10]), float(row[11])],
+                        "mouth_left": [float(row[12]), float(row[13])],
+                    },
+                    "face_confidence": float(row[14]),
+                })
+            return output
+
+        cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        detections = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(80, 80))
+        return [
+            {
+                "facial_area": [int(x), int(y), int(x + box_width), int(y + box_height)],
+                "landmarks": {},
+                "face_confidence": 0.5,
+            }
+            for x, y, box_width, box_height in detections
+        ]
+
+    def _represent(self, image: np.ndarray, detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        deepface = self._load_deepface()
+        representations: List[Dict[str, Any]] = []
+        for detection in detections:
+            top, right, bottom, left = self._record_box(detection, image.shape)
+            face_width = right - left
+            face_height = bottom - top
+            margin_x = int(face_width * 0.18)
+            margin_y = int(face_height * 0.22)
+            crop = image[
+                max(0, top - margin_y):min(image.shape[0], bottom + margin_y),
+                max(0, left - margin_x):min(image.shape[1], right + margin_x),
+            ]
+            try:
+                record = deepface.represent(
+                    img_path=crop,
+                    model_name=self.model_name,
+                    detector_backend="skip",
+                    enforce_detection=False,
+                    align=False,
+                    normalization="base",
+                )
+                if isinstance(record, list):
+                    record = record[0] if record else None
+                if isinstance(record, dict):
+                    representations.append({
+                        "embedding": record.get("embedding", []),
+                        "facial_area": detection["facial_area"],
+                        "landmarks": detection.get("landmarks", {}),
+                        "face_confidence": detection.get("face_confidence", 0.0),
+                    })
+            except Exception as exc:
+                raise ValueError(f"Face embedding extraction failed: {exc}") from exc
+        if not representations:
+            raise ValueError("Face embedding extraction returned no usable embeddings.")
+        return representations
 
     @staticmethod
     def _box_from_area(area: Any, image_shape: Tuple[int, ...]) -> FaceBox:
@@ -261,14 +301,34 @@ class BiometricFaceEngine:
 
     def _extract_records(self, image: np.ndarray) -> List[Tuple[Dict[str, Any], FaceBox, Dict[str, List[Tuple[int, int]]]]]:
         normalized = self._normalize_image(image)
-        embeddings = self._represent(normalized)
         landmarks = self._detect_landmarks(normalized)
+        embeddings = self._represent(normalized, landmarks)
         output = []
         for embedding_record in embeddings:
             face_box = self._record_box(embedding_record, normalized.shape)
-            landmark_record = self._match_landmarks(embedding_record, landmarks, normalized.shape)
-            output.append((embedding_record, face_box, self._landmarks_for_liveness(landmark_record, face_box)))
+            # Landmarks are already matched by the new _represent flow.
+            output.append((embedding_record, face_box, self._landmarks_for_liveness(embedding_record, face_box)))
         return output
+
+    def extract_landmarks(
+        self,
+        image: np.ndarray,
+    ) -> Tuple[FaceBox, Dict[str, List[Tuple[int, int]]]]:
+        """Detect one face and return only landmarks for fast motion checks.
+
+        Active liveness does not need a recognition embedding. Keeping this
+        path detector-only reduces per-frame latency and prevents the browser
+        from queuing heavyweight neural-network requests during a challenge.
+        """
+        normalized = self._normalize_image(image)
+        landmark_records = self._detect_landmarks(normalized)
+        if not landmark_records:
+            raise ValueError("No face detected in the image.")
+        if len(landmark_records) > 1:
+            raise ValueError(f"Multiple faces ({len(landmark_records)}) detected. Keep only one face in frame.")
+        record = landmark_records[0]
+        face_box = self._record_box(record, normalized.shape)
+        return face_box, self._landmarks_for_liveness(record, face_box)
 
     def extract_face(
         self,

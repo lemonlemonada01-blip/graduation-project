@@ -63,12 +63,12 @@ def decode_base64_image(b64_string: str) -> np.ndarray:
 
 
 def verify_motion(frame: np.ndarray, challenge_type: str) -> dict[str, Any]:
-    _, _, landmarks = face_engine.extract_face(frame, strict_quality=False)
+    _, landmarks = face_engine.extract_landmarks(frame)
     return ActiveLivenessDetector.verify_motion_challenge(landmarks, challenge_type, frame.shape)
 
 
 def estimate_pose(frame: np.ndarray) -> dict[str, float]:
-    _, _, landmarks = face_engine.extract_face(frame, strict_quality=False)
+    _, landmarks = face_engine.extract_landmarks(frame)
     return ActiveLivenessDetector.estimate_head_pose(landmarks, frame.shape)
 
 

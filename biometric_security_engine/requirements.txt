@@ -12,7 +12,6 @@ cryptography>=43,<46
 # Python 3.12-compatible face detection and recognition.
 # These packages provide prebuilt Windows wheels and avoid native C++ compilation.
 deepface>=0.0.100,<0.1
-retina-face>=0.0.17,<1
 tensorflow>=2.20,<2.22
 tf-keras>=2.20,<2.22
 opencv-python==4.10.0.84
