@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from ..dependencies import get_db, get_current_user
+from ..dependencies import get_db, require_roles
 from ..database.models import *
 from pydantic import BaseModel
 from typing import List, Optional
@@ -68,7 +68,7 @@ def get_meeting(id: int, db: Session = Depends(get_db)):
     }
 
 @router.post("/")
-def create_meeting(data: MeetingCreate, db: Session = Depends(get_db)):
+def create_meeting(data: MeetingCreate, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     m = Meeting(
         title=data.title,
         project_id=data.project_id,
@@ -96,7 +96,7 @@ def create_meeting(data: MeetingCreate, db: Session = Depends(get_db)):
     return {"status": "ok", "meeting_id": m.id, "title": m.title}
 
 @router.put("/{id}")
-def update_meeting(id: int, data: MeetingCreate, db: Session = Depends(get_db)):
+def update_meeting(id: int, data: MeetingCreate, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     m = db.query(Meeting).filter(Meeting.id == id).first()
     if not m:
         raise HTTPException(status_code=404, detail="Meeting not found")
@@ -113,7 +113,7 @@ def update_meeting(id: int, data: MeetingCreate, db: Session = Depends(get_db)):
     return {"status": "ok", "message": "Meeting updated"}
 
 @router.delete("/{id}")
-def delete_meeting(id: int, db: Session = Depends(get_db)):
+def delete_meeting(id: int, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     m = db.query(Meeting).filter(Meeting.id == id).first()
     if not m:
         raise HTTPException(status_code=404, detail="Meeting not found")
@@ -123,7 +123,7 @@ def delete_meeting(id: int, db: Session = Depends(get_db)):
     return {"status": "ok", "message": "Meeting deleted"}
 
 @router.post("/{id}/verify")
-def verify_attendee(id: int, data: VerifyAttendee, db: Session = Depends(get_db)):
+def verify_attendee(id: int, data: VerifyAttendee, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor", "Staff"]))):
     m = db.query(Meeting).filter(Meeting.id == id).first()
     if not m:
         raise HTTPException(status_code=404, detail="Meeting not found")

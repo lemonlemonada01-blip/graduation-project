@@ -68,54 +68,68 @@ export function Reports() {
   const [attendanceTrends, setAttendanceTrends] = useState(DEFAULT_ATTENDANCE_TRENDS);
   const [teamActivity, setTeamActivity] = useState(DEFAULT_TEAM_ACTIVITY);
   const [projectStatusDist, setProjectStatusDist] = useState(DEFAULT_PROJECT_STATUS);
+  const [loadErrors, setLoadErrors] = useState<string[]>([]);
 
   const fetchReportsData = async () => {
-    try {
-      const [sumRes, compRes, attRes, actRes] = await Promise.allSettled([
-        reportsApi.getAnalytics(),
-        reportsApi.getCompletionTrends(),
-        reportsApi.getAttendanceTrends(),
-        reportsApi.getTeamActivity(),
-      ]);
+    setLoading(true);
+    const [sumRes, compRes, attRes, actRes] = await Promise.allSettled([
+      reportsApi.getAnalytics(),
+      reportsApi.getCompletionTrends(),
+      reportsApi.getAttendanceTrends(),
+      reportsApi.getTeamActivity(),
+    ]);
+    const errors: string[] = [];
 
-      if (sumRes.status === "fulfilled" && sumRes.value) {
-        setSummary(sumRes.value);
-        if (sumRes.value.project_status_distribution) {
-          const colors: Record<string, string> = {
-            'Completed': '#10b981',
-            'In Progress': '#3b82f6',
-            'Proposed': '#f59e0b',
-            'Approved': '#14b8a6',
-            'On Hold': '#ef4444'
-          };
-          const dist = Object.entries(sumRes.value.project_status_distribution).map(([name, value]) => ({
-            name,
-            value: Number(value),
-            color: colors[name] || '#6366f1'
-          }));
-          if (dist.length > 0) setProjectStatusDist(dist);
-        }
-      }
-
-      if (compRes.status === "fulfilled" && compRes.value?.trends) {
-        setCompletionTrends(compRes.value.trends);
-      }
-
-      if (attRes.status === "fulfilled" && attRes.value?.trends) {
-        setAttendanceTrends(attRes.value.trends);
-      }
-
-      if (actRes.status === "fulfilled" && actRes.value?.activity) {
-        setTeamActivity(actRes.value.activity);
-      }
-
-      setLastUpdated(new Date());
-    } catch (err) {
-      console.warn("Failed to load reports data:", err);
-    } finally {
-      setLoading(false);
-      setIsRefreshing(false);
+    if (sumRes.status === "fulfilled" && sumRes.value) {
+      setSummary(sumRes.value);
+      const colors: Record<string, string> = {
+        Completed: "#10b981",
+        "In Progress": "#3b82f6",
+        Proposed: "#f59e0b",
+        Approved: "#14b8a6",
+        "On Hold": "#ef4444",
+      };
+      const dist = Object.entries(sumRes.value.project_status_distribution || {}).map(([name, value]) => ({
+        name,
+        value: Number(value),
+        color: colors[name] || "#6366f1",
+      }));
+      if (dist.length > 0) setProjectStatusDist(dist);
+    } else {
+      errors.push("Summary analytics are unavailable");
     }
+
+    if (compRes.status === "fulfilled" && compRes.value?.monthly) {
+      setCompletionTrends(compRes.value.monthly);
+    } else {
+      errors.push("Completion trends are unavailable");
+    }
+
+    if (attRes.status === "fulfilled" && attRes.value?.trend) {
+      setAttendanceTrends(attRes.value.trend.map((item) => {
+        const total = item.Present + item.Late + item.Absent;
+        const rate = total > 0 ? ((item.Present + item.Late) / total) * 100 : 0;
+        return { period: item.name, studentRate: rate, supervisorRate: rate };
+      }));
+    } else {
+      errors.push("Attendance trends are unavailable");
+    }
+
+    if (actRes.status === "fulfilled" && actRes.value?.teams) {
+      setTeamActivity(actRes.value.teams.map((team) => ({
+        name: team.team,
+        Commits: team.tasks_completed,
+        Reviews: team.members,
+        Issues: 0,
+      })));
+    } else {
+      errors.push("Team activity is unavailable");
+    }
+
+    if (errors.length === 0) setLastUpdated(new Date());
+    setLoadErrors(errors);
+    setLoading(false);
+    setIsRefreshing(false);
   };
 
   useEffect(() => {
@@ -152,7 +166,9 @@ export function Reports() {
     );
   }
 
-  const totalProjects = summary?.total_projects || projectStatusDist.reduce((acc, p) => acc + p.value, 0);
+  const totalProjects = summary?.total_projects ?? summary?.kpis.total_projects ?? projectStatusDist.reduce((acc, p) => acc + p.value, 0);
+  const totalUsers = summary?.kpis.total_users ?? 0;
+  const attendanceRate = summary?.avg_attendance_rate ?? Number.parseFloat(summary?.kpis.attendance_rate || "0");
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
@@ -171,6 +187,13 @@ export function Reports() {
           </div>
         </div>
       </div>
+
+      {loadErrors.length > 0 && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200" role="status">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>Some report sections could not be loaded: {loadErrors.join("; ")}. Showing available data.</span>
+        </div>
+      )}
 
       {/* Screen Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 print:hidden">
@@ -218,7 +241,7 @@ export function Reports() {
               <Users className="w-6 h-6 text-indigo-400" />
             </div>
             <p className="text-sm font-medium text-text-muted">{t("active_users")}</p>
-            <h3 className="text-3xl font-bold text-text-main mt-1">{summary?.total_users || 128}</h3>
+            <h3 className="text-3xl font-bold text-text-main mt-1">{totalUsers}</h3>
           </motion.div>
         </Tooltip>
 
@@ -238,7 +261,7 @@ export function Reports() {
               <ShieldCheck className="w-6 h-6 text-emerald-400" />
             </div>
             <p className="text-sm font-medium text-text-muted">{t("avg_attendance")}</p>
-            <h3 className="text-3xl font-bold text-text-main mt-1">{summary?.avg_attendance_rate || 91.8}%</h3>
+            <h3 className="text-3xl font-bold text-text-main mt-1">{attendanceRate.toFixed(1)}%</h3>
           </motion.div>
         </Tooltip>
 
@@ -297,7 +320,7 @@ export function Reports() {
               <p className="text-xs text-text-muted">{t("attendance_trends_desc")}</p>
             </div>
             <span className="text-xs font-mono text-indigo-400 font-bold bg-indigo-500/10 px-2 py-1 rounded-md border border-indigo-500/20">
-              Avg {summary?.avg_attendance_rate || 91.8}%
+              Avg {attendanceRate.toFixed(1)}%
             </span>
           </div>
           <div className="flex-1 min-h-0">

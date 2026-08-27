@@ -13,6 +13,7 @@ export function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleBiometricLogin = async () => {
     setAuthError(null);
@@ -38,6 +39,9 @@ export function Login() {
           localStorage.setItem("auth_token", response.token);
         }
         localStorage.setItem("user_email", email.trim());
+        if (response.user) {
+          localStorage.setItem("user_data", JSON.stringify(response.user));
+        }
         toast.success(response.message || "Identity Verified. Access Granted!");
 
         setTimeout(() => {
@@ -54,6 +58,8 @@ export function Login() {
 
   const handleStandardLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthError(null);
+    setIsSubmitting(true);
     try {
       const data = await apiFetch<{ access_token: string; user?: any }>("/api/auth/login", {
         method: "POST",
@@ -68,7 +74,11 @@ export function Login() {
       toast.success("Signed in successfully");
       navigate("/");
     } catch (err: any) {
-      toast.error(err.message || "Invalid credentials");
+      const message = err.message || "Invalid credentials";
+      setAuthError(message);
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -78,10 +88,10 @@ export function Login() {
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-accent rounded-full blur-[120px] opacity-20 pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[30%] h-[30%] bg-accent rounded-full blur-[100px] opacity-10 pointer-events-none" />
 
-      <div className="glass-panel w-full max-w-5xl flex flex-col md:flex-row overflow-hidden relative z-10">
+      <div className="glass-panel w-full max-w-5xl rounded-3xl flex flex-col md:flex-row overflow-hidden relative z-10 shadow-2xl">
         
         {/* Left Side: Biometric Scanner */}
-        <div className="w-full md:w-1/2 p-8 border-b md:border-b-0 md:border-r border-glass-border flex flex-col items-center justify-center relative bg-surface/30">
+        <div className="w-full md:w-1/2 p-5 sm:p-8 border-b md:border-b-0 md:border-r border-glass-border flex flex-col items-center justify-center relative bg-surface/30">
           <div className="text-center mb-6">
             <h2 className="text-2xl font-bold text-text-main flex items-center justify-center gap-2">
               <ScanFace className="text-accent" size={28} />
@@ -91,8 +101,7 @@ export function Login() {
           </div>
 
           <div 
-            className="relative w-full max-w-[300px] aspect-[3/4] overflow-hidden bg-black/80 ring-1 ring-glass-border shadow-2xl mx-auto"
-            style={{ clipPath: "ellipse(50% 50% at 50% 50%)" }}
+            className="relative w-full max-w-[300px] aspect-[3/4] overflow-hidden rounded-[50%] bg-black/80 ring-1 ring-glass-border shadow-2xl mx-auto"
           >
             {/* Webcam Feed */}
             <Webcam
@@ -150,7 +159,7 @@ export function Login() {
           </div>
 
           {authError && (
-            <div className="mt-3 w-full max-w-[320px] flex items-center gap-2 p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
+            <div className="mt-3 w-full max-w-[320px] flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs leading-relaxed" role="alert" aria-live="polite">
               <AlertCircle size={16} className="shrink-0" />
               <span>{authError}</span>
             </div>
@@ -184,7 +193,7 @@ export function Login() {
         </div>
 
         {/* Right Side: Standard Login Form */}
-        <div className="w-full md:w-1/2 p-8 md:p-12 flex flex-col justify-center bg-surface/50">
+        <div className="w-full md:w-1/2 p-5 sm:p-8 md:p-12 flex flex-col justify-center bg-surface/50">
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-2">
               <ShieldCheck className="text-accent" size={32} />
@@ -240,8 +249,12 @@ export function Login() {
               </div>
             </div>
 
-            <button type="submit" className="btn-primary w-full mt-2">
-              Sign In
+            <button type="submit" className="btn-primary w-full mt-2" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <><Loader2 className="animate-spin" size={18} /> Signing in...</>
+              ) : (
+                <>Sign In</>
+              )}
             </button>
           </form>
 

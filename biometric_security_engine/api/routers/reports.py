@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from ..dependencies import get_db, get_current_user
+from ..dependencies import get_db, require_roles
 from ..database.models import (
     Project, Meeting, User, Team, PlagiarismScanReport, SessionAttendanceRecord
 )
@@ -9,7 +9,7 @@ from ..database.models import (
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
 
 @router.get("/analytics")
-def get_analytics(db: Session = Depends(get_db)):
+def get_analytics(db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     total_projects = db.query(func.count(Project.id)).scalar() or 0
     active_projects = db.query(func.count(Project.id)).filter(Project.status == "In Progress").scalar() or 0
     completed_projects = db.query(func.count(Project.id)).filter(Project.status == "Completed").scalar() or 0
@@ -65,7 +65,7 @@ def get_analytics(db: Session = Depends(get_db)):
     }
 
 @router.get("/completion-trends")
-def get_completion_trends(db: Session = Depends(get_db)):
+def get_completion_trends(db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     return {
         "monthly": [
             {"month": "Jan", "completed": 2, "target": 5},
@@ -77,7 +77,7 @@ def get_completion_trends(db: Session = Depends(get_db)):
     }
 
 @router.get("/attendance-trends")
-def get_attendance_trends(db: Session = Depends(get_db)):
+def get_attendance_trends(db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     return {
         "trend": [
             {"name": "Week 1", "Present": 25, "Late": 3, "Absent": 2},
@@ -88,7 +88,7 @@ def get_attendance_trends(db: Session = Depends(get_db)):
     }
 
 @router.get("/team-activity")
-def get_team_activity(db: Session = Depends(get_db)):
+def get_team_activity(db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     teams = db.query(Team).all()
     result = []
     for t in teams:

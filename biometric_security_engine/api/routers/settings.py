@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from ..dependencies import get_db, get_current_user
+from ..dependencies import get_db, require_roles
 from ..database.models import User, UserPreference, AuditLog
 from ..services.auth_service import verify_password, get_password_hash
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
 
 @router.get("/me")
-def get_me(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_me(db: Session = Depends(get_db), current_user: User = Depends(require_roles(["Admin", "Instructor", "Student", "Staff"]))):
     prefs = db.query(UserPreference).filter(UserPreference.user_id == current_user.id).first()
     if not prefs:
         prefs = UserPreference(
@@ -41,7 +41,7 @@ def get_me(db: Session = Depends(get_db), current_user: User = Depends(get_curre
     }
 
 @router.put("/me")
-def update_me(prefs_data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_me(prefs_data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_roles(["Admin", "Instructor", "Student", "Staff"]))):
     prefs = db.query(UserPreference).filter(UserPreference.user_id == current_user.id).first()
     if not prefs:
         prefs = UserPreference(user_id=current_user.id)
@@ -66,7 +66,7 @@ def update_me(prefs_data: dict, db: Session = Depends(get_db), current_user: Use
     }
 
 @router.post("/change-password")
-def change_password(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def change_password(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_roles(["Admin", "Instructor", "Student", "Staff"]))):
     current_password = data.get("current_password")
     new_password = data.get("new_password")
     
@@ -85,7 +85,7 @@ def change_password(data: dict, db: Session = Depends(get_db), current_user: Use
     }
 
 @router.get("/logs")
-def get_logs(db: Session = Depends(get_db)):
+def get_logs(db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     logs = db.query(AuditLog).order_by(AuditLog.created_at.desc()).all()
     result = []
     for log in logs:

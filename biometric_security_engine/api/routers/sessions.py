@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from ..dependencies import get_db, get_current_user
+from ..dependencies import get_db, require_roles
 from ..database.models import AcademicSession, SessionAttendanceRecord
 import datetime
 
@@ -41,7 +41,7 @@ def get_sessions(db: Session = Depends(get_db)):
     return {"sessions": result}
 
 @router.post("/")
-def create_session(session_data: dict, db: Session = Depends(get_db)):
+def create_session(session_data: dict, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     new_session = AcademicSession(
         id=session_data.get("id"),
         course_code=session_data.get("course_code"),
@@ -76,7 +76,7 @@ def create_session(session_data: dict, db: Session = Depends(get_db)):
     }
 
 @router.put("/{id}")
-def update_session(id: str, session_data: dict, db: Session = Depends(get_db)):
+def update_session(id: str, session_data: dict, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     session = db.query(AcademicSession).filter(AcademicSession.id == id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -108,7 +108,7 @@ def update_session(id: str, session_data: dict, db: Session = Depends(get_db)):
     }
 
 @router.delete("/{id}")
-def delete_session(id: str, db: Session = Depends(get_db)):
+def delete_session(id: str, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     session = db.query(AcademicSession).filter(AcademicSession.id == id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -139,7 +139,7 @@ def get_session_roster(id: str, db: Session = Depends(get_db)):
     return result
 
 @router.post("/{sessionId}/clockin")
-def clock_in_student(sessionId: str, clockin_data: dict, db: Session = Depends(get_db)):
+def clock_in_student(sessionId: str, clockin_data: dict, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor", "Student"]))):
     session = db.query(AcademicSession).filter(AcademicSession.id == sessionId).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -191,7 +191,7 @@ def clock_in_student(sessionId: str, clockin_data: dict, db: Session = Depends(g
     }
 
 @router.get("/stats")
-def get_session_stats(db: Session = Depends(get_db)):
+def get_session_stats(db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     sessions = db.query(AcademicSession).all()
     trend = []
     

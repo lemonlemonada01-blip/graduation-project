@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from ..dependencies import get_db, get_current_user
+from ..dependencies import get_db, require_roles
 from ..database.models import User
 import random
 import string
@@ -13,7 +13,8 @@ def get_users(
     search: str = None,
     role: str = None,
     status: str = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user=Depends(require_roles(["Admin", "Instructor"]))
 ):
     query = db.query(User)
     
@@ -42,7 +43,7 @@ def get_users(
     return {"users": result}
 
 @router.put("/{userId}")
-def update_user(userId: int, user_data: dict, db: Session = Depends(get_db)):
+def update_user(userId: int, user_data: dict, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin"]))):
     user = db.query(User).filter(User.id == userId).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -79,7 +80,7 @@ def update_user(userId: int, user_data: dict, db: Session = Depends(get_db)):
     }
 
 @router.patch("/{userId}/status")
-def update_user_status(userId: int, status_data: dict, db: Session = Depends(get_db)):
+def update_user_status(userId: int, status_data: dict, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin"]))):
     user = db.query(User).filter(User.id == userId).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -98,7 +99,7 @@ def update_user_status(userId: int, status_data: dict, db: Session = Depends(get
     }
 
 @router.delete("/{userId}")
-def delete_user(userId: int, db: Session = Depends(get_db)):
+def delete_user(userId: int, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin"]))):
     user = db.query(User).filter(User.id == userId).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -112,7 +113,7 @@ def delete_user(userId: int, db: Session = Depends(get_db)):
     }
 
 @router.post("/{userId}/reset-password")
-def reset_password(userId: int, db: Session = Depends(get_db)):
+def reset_password(userId: int, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin"]))):
     user = db.query(User).filter(User.id == userId).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

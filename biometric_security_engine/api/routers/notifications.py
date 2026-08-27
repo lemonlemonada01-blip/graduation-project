@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from ..dependencies import get_db, get_current_user
+from ..dependencies import get_db, require_roles
 from ..database.models import Notification
 
 router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
@@ -13,7 +13,7 @@ class NotificationCreate(BaseModel):
     link_route: str = None
 
 @router.get("/")
-def get_notifications(db: Session = Depends(get_db)):
+def get_notifications(db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor", "Student", "Staff"]))):
     notifications = db.query(Notification).order_by(Notification.created_at.desc()).all()
     unread_count = db.query(Notification).filter(Notification.is_read == 0).count()
     
@@ -32,7 +32,7 @@ def get_notifications(db: Session = Depends(get_db)):
     return {"notifications": res, "unread_count": unread_count}
 
 @router.post("/")
-def create_notification(notif: NotificationCreate, db: Session = Depends(get_db)):
+def create_notification(notif: NotificationCreate, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     new_notif = Notification(
         title=notif.title,
         description=notif.description,
@@ -45,7 +45,7 @@ def create_notification(notif: NotificationCreate, db: Session = Depends(get_db)
     return {"status": "ok", "notification_id": new_notif.id}
 
 @router.patch("/{id}/read")
-def mark_read(id: int, db: Session = Depends(get_db)):
+def mark_read(id: int, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor", "Student", "Staff"]))):
     notif = db.query(Notification).filter(Notification.id == id).first()
     if not notif:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
@@ -54,7 +54,7 @@ def mark_read(id: int, db: Session = Depends(get_db)):
     return {"status": "ok", "message": "Notification marked as read"}
 
 @router.post("/read-all")
-def mark_all_read(db: Session = Depends(get_db)):
+def mark_all_read(db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor", "Student", "Staff"]))):
     db.query(Notification).filter(Notification.is_read == 0).update({"is_read": 1})
     db.commit()
     return {"status": "ok", "message": "All notifications marked as read"}

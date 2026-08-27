@@ -7,6 +7,7 @@ import React, { Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { MainLayout } from "./components/layout/MainLayout";
 import { RefreshCw } from "lucide-react";
+import { useRole } from "./hooks/useRole";
 
 // Lazy loading or direct imports for pages
 const CommandCenter = React.lazy(() => import("./pages/CommandCenter").then(module => ({ default: module.CommandCenter })));
@@ -26,13 +27,26 @@ const Teams = React.lazy(() => import("./pages/Teams").then(module => ({ default
 const SessionManagement = React.lazy(() => import("./pages/SessionManagement").then(module => ({ default: module.SessionManagement })));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const token = localStorage.getItem('auth_token');
-  if (!token) return <Navigate to="/login" replace />;
+  const [authenticated, setAuthenticated] = React.useState(() => Boolean(localStorage.getItem("auth_token")));
+
+  React.useEffect(() => {
+    const handleExpired = () => setAuthenticated(false);
+    window.addEventListener("auth-expired", handleExpired);
+    return () => window.removeEventListener("auth-expired", handleExpired);
+  }, []);
+
+  if (!authenticated) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
 function LoadingSpinner() {
   return <div className="flex h-screen items-center justify-center text-white">Loading...</div>;
+}
+
+function RoleRoute({ allowed, children }: { allowed: string[]; children: React.ReactNode }) {
+  const { can } = useRole();
+  if (!can(...allowed)) return <Navigate to="/" replace />;
+  return <>{children}</>;
 }
 
 export default function App() {
@@ -47,14 +61,14 @@ export default function App() {
             <Route path="/" element={<CommandCenter />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/projects/:id" element={<ProjectDetail />} />
-            <Route path="/users" element={<UserManagement />} />
-            <Route path="/users/add" element={<AddUser />} />
+            <Route path="/users" element={<RoleRoute allowed={["Admin"]}><UserManagement /></RoleRoute>} />
+            <Route path="/users/add" element={<RoleRoute allowed={["Admin"]}><AddUser /></RoleRoute>} />
             <Route path="/teams" element={<Teams />} />
             <Route path="/sessions" element={<SessionManagement />} />
             <Route path="/meetings" element={<Meetings />} />
             <Route path="/plagiarism" element={<Plagiarism />} />
             <Route path="/attendance" element={<Attendance />} />
-            <Route path="/reports" element={<Reports />} />
+            <Route path="/reports" element={<RoleRoute allowed={["Admin", "Instructor"]}><Reports /></RoleRoute>} />
             <Route path="/settings" element={<Settings />} />
           </Route>
 

@@ -46,73 +46,68 @@ export function CommandCenter() {
   const [statusDistribution, setStatusDistribution] = useState<Array<{ name: string; value: number; color: string }>>([]);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadErrors, setLoadErrors] = useState<string[]>([]);
 
   const fetchLiveMetrics = async () => {
-    try {
-      const [analyticsRes, projectsRes, healthRes] = await Promise.allSettled([
-        reportsApi.getAnalytics(),
-        projectsApi.getAll(),
-        systemHealthApi.get()
-      ]);
+    const [analyticsRes, projectsRes, healthRes] = await Promise.allSettled([
+      reportsApi.getAnalytics(),
+      projectsApi.getAll(),
+      systemHealthApi.get(),
+    ]);
+    const errors: string[] = [];
 
-      if (analyticsRes.status === "fulfilled" && analyticsRes.value) {
-        const data = analyticsRes.value;
-        setAnalytics(data);
-        setActiveProjectsCount(data.total_projects || 0);
-        setPlagiarismAlertsCount(data.flagged_plagiarism_cases || 0);
-        setAvgAttendanceRate(data.avg_attendance_rate || 94.5);
+    if (analyticsRes.status === "fulfilled" && analyticsRes.value) {
+      const data = analyticsRes.value;
+      const kpis = data.kpis;
+      setAnalytics(data);
+      setActiveProjectsCount(data.total_projects ?? kpis.total_projects ?? 0);
+      setPlagiarismAlertsCount(data.flagged_plagiarism_cases ?? 0);
+      setAvgAttendanceRate(data.avg_attendance_rate ?? (Number.parseFloat(kpis.attendance_rate) || 0));
 
-        // Map status distribution
-        if (data.project_status_distribution) {
-          const colors: Record<string, string> = {
-            'Proposed': '#3b82f6',
-            'Approved': '#f59e0b',
-            'In Progress': '#10b981',
-            'Completed': '#8b5cf6',
-            'On Hold': '#ef4444'
-          };
-          const mapped = Object.entries(data.project_status_distribution).map(([name, val]) => ({
-            name,
-            value: Number(val),
-            color: colors[name] || '#6366f1'
-          }));
-          setStatusDistribution(mapped);
-        }
-      }
-
-      if (projectsRes.status === "fulfilled" && projectsRes.value) {
-        const pList = projectsRes.value;
-        if (!analyticsRes.status || analyticsRes.status !== "fulfilled") {
-          setActiveProjectsCount(pList.length);
-        }
-
-        // Compute domain breakdown dynamically from projects
-        const domainCounts: Record<string, number> = {};
-        pList.forEach(p => {
-          const domain = p.department || p.category || (p.tags && p.tags[0]) || "General Engineering";
-          domainCounts[domain] = (domainCounts[domain] || 0) + 1;
-        });
-
-        const breakdown = Object.entries(domainCounts).map(([name, count]) => ({
-          name,
-          projects: count
-        }));
-        if (breakdown.length > 0) {
-          setDomainBreakdown(breakdown);
-        }
-      }
-
-      if (healthRes.status === "fulfilled" && healthRes.value) {
-        setIsSystemHealthy(healthRes.value.database === "connected");
-      }
-
-      setLastUpdated(new Date());
-    } catch (err) {
-      console.warn("Failed to fetch live CommandCenter metrics:", err);
-    } finally {
-      setLoading(false);
-      setIsRefreshing(false);
+      const colors: Record<string, string> = {
+        Proposed: "#3b82f6",
+        Approved: "#f59e0b",
+        "In Progress": "#10b981",
+        Completed: "#8b5cf6",
+        "On Hold": "#ef4444",
+      };
+      const statusDistribution = data.project_status_distribution || {};
+      const mapped = Object.entries(statusDistribution).map(([name, val]) => ({
+        name,
+        value: Number(val),
+        color: colors[name] || "#6366f1",
+      }));
+      setStatusDistribution(mapped);
+    } else {
+      errors.push("Analytics data is unavailable");
     }
+
+    if (projectsRes.status === "fulfilled" && projectsRes.value) {
+      const pList = projectsRes.value.projects || [];
+      if (analyticsRes.status !== "fulfilled") setActiveProjectsCount(pList.length);
+
+      const domainCounts: Record<string, number> = {};
+      pList.forEach((project) => {
+        const domain = project.domain || project.department || "General Engineering";
+        domainCounts[domain] = (domainCounts[domain] || 0) + 1;
+      });
+      setDomainBreakdown(Object.entries(domainCounts).map(([name, projects]) => ({ name, projects })));
+    } else {
+      errors.push("Project data is unavailable");
+    }
+
+    if (healthRes.status === "fulfilled" && healthRes.value) {
+      const health = healthRes.value;
+      setIsSystemHealthy(health.status === "healthy" && (health.database === undefined || health.database === "connected"));
+    } else {
+      setIsSystemHealthy(false);
+      errors.push("System health is unavailable");
+    }
+
+    if (errors.length === 0) setLastUpdated(new Date());
+    setLoadErrors(errors);
+    setLoading(false);
+    setIsRefreshing(false);
   };
 
   useEffect(() => {
@@ -190,6 +185,13 @@ export function CommandCenter() {
       animate="show"
       className="max-w-7xl mx-auto space-y-6 pb-12"
     >
+      {loadErrors.length > 0 && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200" role="status">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>Some dashboard data could not be loaded: {loadErrors.join("; ")}. Available sections remain visible.</span>
+        </div>
+      )}
+
       {/* Top Header */}
       <div className="flex items-center justify-between mb-8">
         <div>

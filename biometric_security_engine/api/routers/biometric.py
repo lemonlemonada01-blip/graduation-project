@@ -152,11 +152,19 @@ def authenticate_face(payload: FaceLoginRequest, db: Session = Depends(get_db)):
     if not is_match:
         raise HTTPException(status_code=401, detail="Face does not match registered profile records.")
 
+    user = _find_user_for_student_id(db, student_id)
+    token_subject = user.email if user else student_id
     return {
         "authenticated": True,
-        "token": create_jwt_token(student_id),
+        "token": create_jwt_token(token_subject),
         "distance": distance,
         "message": "Identity Verified. Access Granted.",
+        "user": {
+            "id": user.id,
+            "name": user.full_name,
+            "email": user.email,
+            "role": user.role,
+        } if user else None,
     }
 
 

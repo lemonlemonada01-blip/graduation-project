@@ -12,6 +12,7 @@ import { Avatar } from "../components/ui/Avatar";
 import { Confetti } from "../components/ui/Confetti";
 import { Select } from "../components/ui/Select";
 import { CollaborativeCursors } from "../components/ui/CollaborativeCursors";
+import { useRole } from "../hooks/useRole";
 import { projectsApi, ProjectData, ProjectCommentData } from "../lib/api";
 
 const COLUMNS = ["Proposed", "Approved", "In Progress", "Completed"];
@@ -19,13 +20,14 @@ const COLUMNS = ["Proposed", "Approved", "In Progress", "Completed"];
 export function Projects() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { can } = useRole();
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<"grid" | "kanban" | "list">("grid");
   const [projects, setProjects] = useState<ProjectData[]>([]);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   
   // Comments Drawer
-  const [activeProjectForComments, setActiveProjectForComments] = useState<number | null>(null);
+  const [activeProjectForComments, setActiveProjectForComments] = useState<string | null>(null);
   const [comments, setComments] = useState<ProjectCommentData[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
   const [commentText, setCommentText] = useState("");
@@ -39,7 +41,7 @@ export function Projects() {
   const [newYear, setNewYear] = useState("2024/2025");
   const [newAbstract, setNewAbstract] = useState("");
 
-  const [selectedProjects, setSelectedProjects] = useState<number[]>([]);
+  const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const [showConfetti, setShowConfetti] = useState(false);
   const [filterStatus, setFilterStatus] = useState("");
   const [filterDomain, setFilterDomain] = useState("");
@@ -93,9 +95,9 @@ export function Projects() {
       await projectsApi.create({
         title: newTitle.trim(),
         domain: newDomain,
-        supervisor: newSupervisor,
-        dept: newDept,
-        year: newYear,
+        supervisor_name: newSupervisor,
+        department: newDept,
+        academic_year: newYear,
         abstract: newAbstract.trim(),
         status: "Proposed",
       });
@@ -110,7 +112,7 @@ export function Projects() {
     }
   };
 
-  const handleDragStart = (e: React.DragEvent, id: number) => {
+  const handleDragStart = (e: React.DragEvent, id: string) => {
     e.dataTransfer.setData("projectId", id.toString());
   };
 
@@ -120,8 +122,12 @@ export function Projects() {
 
   const handleDrop = async (e: React.DragEvent, newStatus: string) => {
     e.preventDefault();
-    const id = parseInt(e.dataTransfer.getData("projectId"));
-    if (isNaN(id)) return;
+    if (!can("Admin", "Instructor")) {
+      toast.error("Only administrators and instructors can change project status");
+      return;
+    }
+    const id = e.dataTransfer.getData("projectId");
+    if (!id) return;
 
     setProjects(prev => prev.map(p => p.id === id ? { ...p, status: newStatus } : p));
     toast.success(`Project moved to ${newStatus}`);
@@ -279,13 +285,15 @@ export function Projects() {
               <Kanban className="w-4 h-4" />
             </button>
           </div>
-          <button 
-            onClick={() => navigate('/plagiarism')}
-            className="btn-primary whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            {t('new_project')}
-          </button>
+          {can("Admin", "Instructor", "Student") && (
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="btn-primary whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              {t('new_project')}
+            </button>
+          )}
         </div>
       </div>
       
@@ -474,8 +482,8 @@ export function Projects() {
               <div 
                 key={column} 
                 className="glass-panel border-none bg-text-muted/5 p-4 min-w-[320px] flex flex-col gap-3 rounded-xl h-full"
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, column)}
+                onDragOver={can("Admin", "Instructor") ? handleDragOver : undefined}
+                onDrop={can("Admin", "Instructor") ? (e) => handleDrop(e, column) : undefined}
               >
                 <div className="flex justify-between items-center mb-2">
                   <h4 className="text-sm font-semibold text-text-main uppercase tracking-wider">{column}</h4>
@@ -486,8 +494,8 @@ export function Projects() {
                   {columnProjects.map(project => (
                     <div 
                       key={project.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, project.id)}
+                      draggable={can("Admin", "Instructor")}
+                      onDragStart={can("Admin", "Instructor") ? (e) => handleDragStart(e, project.id) : undefined}
                       onClick={() => setActiveProjectForComments(project.id)}
                       className="glass-card p-4 cursor-grab active:cursor-grabbing hover:border-accent transition-colors bg-surface/80 shadow-lg"
                     >
@@ -516,14 +524,14 @@ export function Projects() {
                   ))}
                 </div>
                 
-                <button 
-                  onClick={() => {
-                    navigate('/plagiarism');
-                  }}
-                  className="text-text-muted hover:text-text-main text-sm flex items-center justify-center gap-1 py-2 hover:bg-text-muted/5 rounded-lg transition-colors mt-2"
-                >
-                  <Plus className="w-4 h-4" /> {t('add_project')}
-                </button>
+                {can("Admin", "Instructor", "Student") && (
+                  <button
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="text-text-muted hover:text-text-main text-sm flex items-center justify-center gap-1 py-2 hover:bg-text-muted/5 rounded-lg transition-colors mt-2"
+                  >
+                    <Plus className="w-4 h-4" /> {t('add_project')}
+                  </button>
+                )}
               </div>
             );
           })}
@@ -731,7 +739,7 @@ export function Projects() {
 
       {/* Floating Selection Bar */}
       <AnimatePresence>
-        {selectedProjects.length > 0 && viewMode === "grid" && (
+        {selectedProjects.length > 0 && viewMode === "grid" && can("Admin") && (
           <motion.div 
             initial={{ opacity: 0, y: 100 }}
             animate={{ opacity: 1, y: 0 }}

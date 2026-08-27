@@ -18,7 +18,6 @@ export class ApiError extends Error {
 
 export async function apiFetch<T = any>(endpoint: string, options: RequestInit & { signal?: AbortSignal } = {}): Promise<T> {
   const url = `${API_BASE_URL}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
-  
   const isFormData = options.body instanceof FormData;
   const headers: Record<string, string> = {
     ...(isFormData ? {} : { "Content-Type": "application/json" }),
@@ -26,41 +25,51 @@ export async function apiFetch<T = any>(endpoint: string, options: RequestInit &
   };
 
   const token = localStorage.getItem("auth_token");
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  // 30s timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
-  const signal = options.signal || controller.signal;
+  const timeoutController = new AbortController();
+  const timeoutId = window.setTimeout(() => timeoutController.abort(), 30000);
+  const signal = options.signal && typeof AbortSignal.any === "function"
+    ? AbortSignal.any([options.signal, timeoutController.signal])
+    : timeoutController.signal;
 
   try {
-    const res = await fetch(url, {
-      ...options,
-      headers,
-      signal,
-    });
-    clearTimeout(timeoutId);
-
+    const res = await fetch(url, { ...options, headers, signal });
     const isJson = res.headers.get("content-type")?.includes("application/json");
-    const data = isJson ? await res.json() : await res.text();
+    let data: any = null;
+    try {
+      data = isJson ? await res.json() : await res.text();
+    } catch {
+      data = null;
+    }
 
     if (!res.ok) {
-      const errorMsg = (typeof data === "object" && data?.detail) ? data.detail : (typeof data === "string" ? data : `HTTP ${res.status}`);
+      const errorMsg = typeof data === "object" && data?.detail
+        ? String(data.detail)
+        : typeof data === "string" && data.trim()
+          ? data
+          : `Request failed with HTTP ${res.status}`;
+      if (res.status === 401 && !endpoint.startsWith("/api/auth/login")) {
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("user_data");
+        window.dispatchEvent(new CustomEvent("auth-expired"));
+      }
       throw new ApiError(errorMsg, res.status, data);
     }
 
     return data as T;
   } catch (err: any) {
-    clearTimeout(timeoutId);
-    if (err instanceof ApiError) {
-      throw err;
+    if (err instanceof ApiError) throw err;
+    if (err?.name === "AbortError") {
+      throw new ApiError("The request timed out. Please check the backend and try again.", 408);
     }
     throw new ApiError(
-      err.message || "Unable to connect to AI Engine backend. Ensure backend is running on http://127.0.0.1:8000.",
-      0
+      "Unable to reach the backend. Start the API server or check VITE_API_URL.",
+      0,
+      err
     );
+  } finally {
+    window.clearTimeout(timeoutId);
   }
 }
 
@@ -107,7 +116,13 @@ export const biometricsApi = {
     }),
 
   authenticate: (studentId: string, imageBase64: string) =>
-    apiFetch<{ authenticated: boolean; token: string; distance?: number; message?: string }>(
+    apiFetch<{
+      authenticated: boolean;
+      token: string;
+      distance?: number;
+      message?: string;
+      user?: { id: number; name: string; email: string; role: string } | null;
+    }>(
       "/api/biometrics/authenticate",
       {
         method: "POST",
@@ -788,6 +803,15 @@ export interface ProjectDetailData extends ProjectItemData {
   }>;
 }
 
+export interface ProjectCommentData {
+  id: number;
+  project_id?: string;
+  user_id: number;
+  content: string;
+  created_at: string;
+  author_name?: string;
+}
+
 export const projectsApi = {
   getAll: () => apiFetch<{ projects: ProjectItemData[] }>("/api/projects"),
 
@@ -838,6 +862,26 @@ export const projectsApi = {
     apiFetch<{ status: string; message: string }>(`/api/projects/${projectId}/tasks/${taskId}`, {
       method: "DELETE",
     }),
+
+  getComments: async (projectId: string) => {
+    const response = await apiFetch<ProjectCommentData[] | { comments: ProjectCommentData[] }>(`/api/projects/${projectId}/comments`);
+    return Array.isArray(response) ? { comments: response } : response;
+  },
+
+  addComment: (projectId: string, content: string, userId?: number) => {
+    let storedUserId = userId;
+    if (!storedUserId) {
+      try {
+        storedUserId = JSON.parse(localStorage.getItem("user_data") || "{}").id;
+      } catch {
+        storedUserId = undefined;
+      }
+    }
+    return apiFetch<ProjectCommentData>(`/api/projects/${projectId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ user_id: storedUserId, content }),
+    });
+  },
 };
 
 // ============================================================================
@@ -899,6 +943,10 @@ export interface ReportsAnalyticsData {
     avg_plagiarism_similarity: string;
   };
   domain_distribution: Array<{ domain: string; count: number; percentage: number }>;
+  total_projects?: number;
+  flagged_plagiarism_cases?: number;
+  avg_attendance_rate?: number;
+  project_status_distribution?: Record<string, number>;
 }
 
 export const reportsApi = {
@@ -952,15 +1000,16 @@ export const notificationsApi = {
 // ============================================================================
 // System Health & Analytics Summary
 // ============================================================================
-export interface AnalyticsSummary extends ReportsAnalyticsData {
-  total_projects?: number;
-  flagged_plagiarism_cases?: number;
-  avg_attendance_rate?: number;
-  project_status_distribution?: Record<string, number>;
-}
+export interface AnalyticsSummary extends ReportsAnalyticsData {}
 
 export const systemHealthApi = {
-  get: () => apiFetch<{ status: string; timestamp?: string }>("/api/system/health"),
+  get: () => apiFetch<{
+    status: string;
+    timestamp?: string;
+    database?: string;
+    biometrics?: string;
+    plagiarism?: string;
+  }>("/api/system/health"),
 };
 
 

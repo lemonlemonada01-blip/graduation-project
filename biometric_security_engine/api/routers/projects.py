@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from ..dependencies import get_db, get_current_user
+from ..dependencies import get_db, require_roles
 from ..database.models import *
 import uuid
 from pydantic import BaseModel
@@ -30,7 +30,7 @@ class TaskCreate(BaseModel):
     assignee_name: Optional[str] = None
 
 class CommentCreate(BaseModel):
-    user_id: int
+    user_id: Optional[int] = None
     content: str
 
 @router.get("/")
@@ -84,7 +84,7 @@ def get_project(id: str, db: Session = Depends(get_db)):
     }
 
 @router.post("/")
-def create_project(data: ProjectCreate, db: Session = Depends(get_db)):
+def create_project(data: ProjectCreate, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor", "Student"]))):
     pid = f"P-{uuid.uuid4().hex[:8]}"
     p = Project(
         id=pid,
@@ -102,7 +102,7 @@ def create_project(data: ProjectCreate, db: Session = Depends(get_db)):
     return {"status": "ok", "project_id": pid, "title": p.title}
 
 @router.put("/{id}")
-def update_project(id: str, data: ProjectCreate, db: Session = Depends(get_db)):
+def update_project(id: str, data: ProjectCreate, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     p = db.query(Project).filter(Project.id == id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -119,7 +119,7 @@ def update_project(id: str, data: ProjectCreate, db: Session = Depends(get_db)):
     return {"status": "ok", "message": "Project updated"}
 
 @router.patch("/{id}/status")
-def update_project_status(id: str, data: ProjectStatusUpdate, db: Session = Depends(get_db)):
+def update_project_status(id: str, data: ProjectStatusUpdate, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     p = db.query(Project).filter(Project.id == id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -129,7 +129,7 @@ def update_project_status(id: str, data: ProjectStatusUpdate, db: Session = Depe
     return {"status": "ok", "project_id": id}
 
 @router.delete("/{id}")
-def delete_project(id: str, db: Session = Depends(get_db)):
+def delete_project(id: str, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin"]))):
     p = db.query(Project).filter(Project.id == id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -144,7 +144,7 @@ def get_project_tasks(id: str, db: Session = Depends(get_db)):
     return [{"id": t.id, "project_id": t.project_id, "title": t.title, "description": t.description, "status": t.status, "priority": t.priority, "category": t.category, "assignee_name": t.assignee_name, "order_index": t.order_index} for t in tasks]
 
 @router.post("/{id}/tasks")
-def create_task(id: str, data: TaskCreate, db: Session = Depends(get_db)):
+def create_task(id: str, data: TaskCreate, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     t = ProjectTask(
         project_id=id,
         title=data.title,
@@ -160,7 +160,7 @@ def create_task(id: str, data: TaskCreate, db: Session = Depends(get_db)):
     return {"status": "ok", "task_id": t.id}
 
 @router.put("/{id}/tasks/{task_id}")
-def update_task(id: str, task_id: int, data: TaskCreate, db: Session = Depends(get_db)):
+def update_task(id: str, task_id: int, data: TaskCreate, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     t = db.query(ProjectTask).filter(ProjectTask.id == task_id, ProjectTask.project_id == id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -175,7 +175,7 @@ def update_task(id: str, task_id: int, data: TaskCreate, db: Session = Depends(g
     return {"status": "ok", "message": "Task updated"}
 
 @router.delete("/{id}/tasks/{task_id}")
-def delete_task(id: str, task_id: int, db: Session = Depends(get_db)):
+def delete_task(id: str, task_id: int, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     t = db.query(ProjectTask).filter(ProjectTask.id == task_id, ProjectTask.project_id == id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -190,12 +190,24 @@ def get_project_comments(id: str, db: Session = Depends(get_db)):
     return [{"id": c.id, "project_id": c.project_id, "user_id": c.user_id, "content": c.content, "created_at": c.created_at, "author_name": c.author.full_name if c.author else None} for c in comments]
 
 @router.post("/{id}/comments")
-def add_project_comment(id: str, data: CommentCreate, db: Session = Depends(get_db)):
+def add_project_comment(id: str, data: CommentCreate, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor", "Student"]))):
+    authenticated_user_id = current_user.id if hasattr(current_user, "id") else data.user_id
+    if not authenticated_user_id:
+        raise HTTPException(status_code=401, detail="A database-backed user is required to post comments")
+
     c = ProjectComment(
         project_id=id,
-        user_id=data.user_id,
-        content=data.content
+        user_id=authenticated_user_id,
+        content=data.content,
     )
     db.add(c)
     db.commit()
-    return {"status": "ok", "comment_id": c.id}
+    db.refresh(c)
+    return {
+        "id": c.id,
+        "project_id": c.project_id,
+        "user_id": c.user_id,
+        "content": c.content,
+        "created_at": c.created_at,
+        "author_name": c.author.full_name if c.author else None,
+    }

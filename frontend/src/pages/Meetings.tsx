@@ -5,10 +5,12 @@ import React from "react";
 import { Skeleton } from "../components/ui/Skeleton";
 import { useTranslation } from "react-i18next";
 import { toast } from "react-hot-toast";
+import { useRole } from "../hooks/useRole";
 import { meetingsApi, MeetingData, MeetingAttendeeData } from "../lib/api";
 
 export function Meetings() {
   const { t } = useTranslation();
+  const { can } = useRole();
   const [meetings, setMeetings] = useState<MeetingData[]>([]);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -155,13 +157,15 @@ export function Meetings() {
               className="input-field w-full pl-9"
             />
           </div>
-          <button 
-            onClick={() => setIsCreateModalOpen(true)}
-            className="btn-primary whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            {t("create_meeting")} (Cmd+N)
-          </button>
+          {can("Admin", "Instructor") && (
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="btn-primary whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              {t("create_meeting")} (Cmd+N)
+            </button>
+          )}
         </div>
       </div>
 
@@ -241,19 +245,21 @@ export function Meetings() {
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <button 
+                            <button
                               onClick={() => setExpandedId(expandedId === meeting.id ? null : meeting.id)}
                               className="px-3 py-1.5 bg-surface/50 hover:bg-surface/80 border border-glass-border rounded-lg text-text-main text-xs font-medium transition-colors"
                             >
                               {expandedId === meeting.id ? t('collapse') : t('expand')}
                             </button>
-                            <button
-                              onClick={() => handleDeleteMeeting(meeting.id, meeting.title)}
-                              className="p-1.5 hover:bg-red-500/10 text-text-muted hover:text-red-400 rounded-lg transition-colors"
-                              title="Delete meeting"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            {can("Admin", "Instructor") && (
+                              <button
+                                onClick={() => handleDeleteMeeting(meeting.id, meeting.title)}
+                                className="p-1.5 hover:bg-red-500/10 text-text-muted hover:text-red-400 rounded-lg transition-colors"
+                                title="Delete meeting"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -302,7 +308,7 @@ export function Meetings() {
                                         </td>
                                         <td className="py-2.5 text-text-muted font-mono text-xs">{attendee.timestamp || "--"}</td>
                                         <td className="py-2.5 text-right">
-                                          {!attendee.is_verified && (
+                                          {!attendee.is_verified && can("Admin", "Instructor", "Staff") && (
                                             <button
                                               onClick={() => handleVerifyAttendee(meeting.id, attendee.student_name, attendee.student_id)}
                                               className="px-2.5 py-1 bg-accent/15 hover:bg-accent/25 border border-accent/30 text-accent rounded-lg text-xs font-medium transition-colors"
@@ -425,7 +431,7 @@ export function Meetings() {
                 </div>
 
                 <div className="flex justify-end gap-3 pt-4 border-t border-glass-border">
-                  <button 
+                  <button
                     type="button" 
                     onClick={() => setIsCreateModalOpen(false)}
                     className="px-4 py-2 rounded-xl text-sm text-text-muted hover:bg-surface transition-colors"

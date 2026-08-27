@@ -6,6 +6,7 @@ import { Skeleton } from "../components/ui/Skeleton";
 import { useTranslation } from "react-i18next";
 import { useOnClickOutside } from "../hooks/useOnClickOutside";
 import { toast } from "react-hot-toast";
+import { useRole } from "../hooks/useRole";
 import { teamsApi, TeamData, TeamMemberData } from "../lib/api";
 
 const COLOR_OPTIONS = [
@@ -19,6 +20,7 @@ const COLOR_OPTIONS = [
 
 export function Teams() {
   const { t } = useTranslation();
+  const { can } = useRole();
   const [teams, setTeams] = useState<TeamData[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -205,13 +207,15 @@ export function Teams() {
               className="input-field w-full pl-9"
             />
           </div>
-          <button 
-            onClick={() => setIsCreateTeamOpen(true)}
-            className="btn-primary whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            Create Team
-          </button>
+          {can("Admin", "Instructor") && (
+            <button
+              onClick={() => setIsCreateTeamOpen(true)}
+              className="btn-primary whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              Create Team
+            </button>
+          )}
         </div>
       </div>
 
@@ -261,8 +265,10 @@ export function Teams() {
                     <p className="text-xs text-text-muted">{team.department} • {team.university}</p>
                   </div>
 
-                  <div className="relative" ref={activeMenuId === team.id ? menuRef : null}>
-                    <button 
+                    {can("Admin", "Instructor") && (
+                      <div className="relative" ref={activeMenuId === team.id ? menuRef : null}>
+
+                    <button
                       onClick={() => setActiveMenuId(activeMenuId === team.id ? null : team.id)}
                       className="text-text-muted hover:text-text-main p-1 rounded-lg hover:bg-surface transition-colors"
                     >
@@ -276,7 +282,7 @@ export function Teams() {
                           exit={{ opacity: 0, scale: 0.95, y: 5 }}
                           className="absolute right-0 top-full mt-1 w-44 bg-surface/95 backdrop-blur-xl rounded-xl shadow-2xl z-50 border border-glass-border overflow-hidden"
                         >
-                          <button 
+                          <button
                             onClick={() => {
                               setActiveTeamForMember(team.id);
                               setIsAddMemberOpen(true);
@@ -286,7 +292,7 @@ export function Teams() {
                           >
                             <Plus className="w-3.5 h-3.5" /> Add Member
                           </button>
-                          <button 
+                          <button
                             onClick={() => handleDeleteTeam(team.id, team.name)}
                             className="w-full px-3 py-2 text-left text-xs text-red-400 hover:bg-red-500/10 transition-colors flex items-center gap-2 border-t border-glass-border"
                           >
@@ -295,7 +301,8 @@ export function Teams() {
                         </motion.div>
                       )}
                     </AnimatePresence>
-                  </div>
+                      </div>
+                    )}
                 </div>
 
                 {team.description && (
@@ -316,8 +323,8 @@ export function Teams() {
                       >
                         <Avatar name={m.name} className="w-4 h-4 text-[8px]" colorClass={team.color_gradient} />
                         <span>{m.name}</span>
-                        {m.id && (
-                          <button 
+                        {m.id && can("Admin", "Instructor") && (
+                          <button
                             onClick={() => handleRemoveMember(team.id, m.id)}
                             className="text-text-muted hover:text-red-400 ml-1"
                             title="Remove member"
@@ -332,15 +339,17 @@ export function Teams() {
               </div>
 
               <div className="pt-4 mt-4 border-t border-glass-border flex justify-between items-center">
-                <button
-                  onClick={() => {
-                    setActiveTeamForMember(team.id);
-                    setIsAddMemberOpen(true);
-                  }}
-                  className="text-xs font-semibold text-accent hover:underline flex items-center gap-1"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Add Member
-                </button>
+                {can("Admin", "Instructor") && (
+                  <button
+                    onClick={() => {
+                      setActiveTeamForMember(team.id);
+                      setIsAddMemberOpen(true);
+                    }}
+                    className="text-xs font-semibold text-accent hover:underline flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Member
+                  </button>
+                )}
                 <span className="text-[11px] text-text-muted font-mono">ID: #{team.id}</span>
               </div>
             </motion.div>
@@ -496,7 +505,7 @@ export function Teams() {
                 </div>
 
                 <div className="flex justify-end gap-3 pt-4 border-t border-glass-border">
-                  <button 
+                  <button
                     type="button" 
                     onClick={() => setIsCreateTeamOpen(false)}
                     className="px-4 py-2 rounded-xl text-sm text-text-muted hover:bg-surface transition-colors"
@@ -588,7 +597,7 @@ export function Teams() {
                 </div>
 
                 <div className="flex justify-end gap-3 pt-4 border-t border-glass-border">
-                  <button 
+                  <button
                     type="button" 
                     onClick={() => setIsAddMemberOpen(false)}
                     className="px-4 py-2 rounded-xl text-sm text-text-muted hover:bg-surface transition-colors"

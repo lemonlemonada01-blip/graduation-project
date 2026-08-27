@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useTranslation } from "react-i18next";
+import { useRole } from "../../hooks/useRole";
 
 const NAV_ITEMS = [
   { name: "dashboard", path: "/", icon: LayoutDashboard },
@@ -21,12 +22,20 @@ const NAV_ITEMS = [
   { name: "sessions", path: "/sessions", icon: Calendar },
   { name: "plagiarism", path: "/plagiarism", icon: Search },
   { name: "attendance", path: "/attendance", icon: Video },
-  { name: "user_management", path: "/users", icon: Users },
-  { name: "reports", path: "/reports", icon: FileText },
+  { name: "user_management", path: "/users", icon: Users, roles: ["Admin"] },
+  { name: "reports", path: "/reports", icon: FileText, roles: ["Admin", "Instructor"] },
 ];
 
 export function Sidebar() {
   const { t } = useTranslation();
+  const { can } = useRole();
+  const visibleItems = NAV_ITEMS.filter((item) => !item.roles || can(...item.roles));
+
+  const handleLogout = () => {
+    localStorage.removeItem("auth_token");
+    localStorage.removeItem("user_data");
+    localStorage.removeItem("user_email");
+  };
 
   return (
     <aside className="w-64 flex-shrink-0 border-r border-glass-border bg-surface/30 hidden md:flex flex-col print:hidden">
@@ -38,7 +47,7 @@ export function Sidebar() {
       </div>
       
       <div className="flex-1 overflow-y-auto py-6 px-4 flex flex-col gap-1">
-        {NAV_ITEMS.map((item) => (
+        {visibleItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
@@ -70,6 +79,7 @@ export function Sidebar() {
         </NavLink>
         <NavLink
           to="/login"
+          onClick={handleLogout}
           className="nav-item mt-1"
         >
           <LogOut className="w-5 h-5" />

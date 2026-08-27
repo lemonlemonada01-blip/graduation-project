@@ -8,6 +8,7 @@ import { cn } from "../../lib/utils";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
 import { useOnClickOutside } from "../../hooks/useOnClickOutside";
 import { useTranslation } from "react-i18next";
+import { useRole } from "../../hooks/useRole";
 
 const NAV_ITEMS = [
   { name: "dashboard", path: "/", icon: LayoutDashboard },
@@ -17,8 +18,8 @@ const NAV_ITEMS = [
   { name: "meetings", path: "/meetings", icon: Calendar },
   { name: "plagiarism", path: "/plagiarism", icon: Search },
   { name: "attendance", path: "/attendance", icon: Video },
-  { name: "user_management", path: "/users", icon: Users },
-  { name: "reports", path: "/reports", icon: FileText },
+  { name: "user_management", path: "/users", icon: Users, roles: ["Admin"] },
+  { name: "reports", path: "/reports", icon: FileText, roles: ["Admin", "Instructor"] },
 ];
 
 export function Topbar() {
@@ -27,6 +28,9 @@ export function Topbar() {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const isOnline = useNetworkStatus();
   const { t, i18n } = useTranslation();
+  const { can, user, role } = useRole();
+  const visibleItems = NAV_ITEMS.filter((item) => !item.roles || can(...item.roles));
+  const displayName = user?.name || user?.full_name || user?.email || "Authenticated User";
   const language = i18n.language;
   const setLanguage = (lang: string) => i18n.changeLanguage(lang);
   
@@ -267,10 +271,10 @@ export function Topbar() {
           
           <div className="flex items-center gap-3 ps-3 border-s border-glass-border ms-1 cursor-pointer group">
             <div className="flex flex-col text-end hidden sm:flex">
-              <span className="text-sm font-medium text-text-main leading-tight group-hover:text-accent transition-colors">Admin User</span>
-              <span className="text-xs text-text-muted leading-tight">Ministry Admin</span>
+              <span className="text-sm font-medium text-text-main leading-tight group-hover:text-accent transition-colors">{displayName}</span>
+              <span className="text-xs text-text-muted leading-tight">{role}</span>
             </div>
-            <Avatar name="Admin User" className="w-8 h-8 text-xs border border-glass-border" colorClass="from-indigo-500 to-purple-600" />
+            <Avatar name={displayName} className="w-8 h-8 text-xs border border-glass-border" colorClass="from-indigo-500 to-purple-600" />
           </div>
         </div>
       </div>
@@ -307,7 +311,7 @@ export function Topbar() {
             </div>
             
             <div className="flex-1 overflow-y-auto py-6 px-4 flex flex-col gap-1">
-              {NAV_ITEMS.map((item) => (
+              {visibleItems.map((item) => (
                 <NavLink
                   key={item.path}
                   to={item.path}

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from ..dependencies import get_db, get_current_user
+from ..dependencies import get_db, require_roles
 from ..database.models import *
 from pydantic import BaseModel
 from typing import List, Optional
@@ -61,7 +61,7 @@ def get_team(id: int, db: Session = Depends(get_db)):
     }
 
 @router.post("/")
-def create_team(data: TeamCreate, db: Session = Depends(get_db)):
+def create_team(data: TeamCreate, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     t = Team(
         name=data.name,
         description=data.description,
@@ -91,7 +91,7 @@ def create_team(data: TeamCreate, db: Session = Depends(get_db)):
     return {"status": "ok", "team_id": t.id, "name": t.name}
 
 @router.put("/{id}")
-def update_team(id: int, data: TeamCreate, db: Session = Depends(get_db)):
+def update_team(id: int, data: TeamCreate, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     t = db.query(Team).filter(Team.id == id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Team not found")
@@ -106,7 +106,7 @@ def update_team(id: int, data: TeamCreate, db: Session = Depends(get_db)):
     return {"status": "ok", "message": "Team updated"}
 
 @router.delete("/{id}")
-def delete_team(id: int, db: Session = Depends(get_db)):
+def delete_team(id: int, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     t = db.query(Team).filter(Team.id == id).first()
     if not t:
         raise HTTPException(status_code=404, detail="Team not found")
@@ -116,7 +116,7 @@ def delete_team(id: int, db: Session = Depends(get_db)):
     return {"status": "ok", "message": "Team deleted"}
 
 @router.post("/{id}/members")
-def add_team_member(id: int, data: TeamMemberCreate, db: Session = Depends(get_db)):
+def add_team_member(id: int, data: TeamMemberCreate, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     m = TeamMember(
         team_id=id,
         user_id=data.user_id,
@@ -132,7 +132,7 @@ def add_team_member(id: int, data: TeamMemberCreate, db: Session = Depends(get_d
     return {"status": "ok", "member_id": m.id}
 
 @router.delete("/{id}/members/{member_id}")
-def remove_team_member(id: int, member_id: int, db: Session = Depends(get_db)):
+def remove_team_member(id: int, member_id: int, db: Session = Depends(get_db), current_user=Depends(require_roles(["Admin", "Instructor"]))):
     m = db.query(TeamMember).filter(TeamMember.id == member_id, TeamMember.team_id == id).first()
     if not m:
         raise HTTPException(status_code=404, detail="Member not found")

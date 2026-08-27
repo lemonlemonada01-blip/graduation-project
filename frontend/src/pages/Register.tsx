@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Webcam from "react-webcam";
 import { motion, AnimatePresence } from "motion/react";
-import { UserPlus, User, Mail, Lock, Briefcase, ScanFace, Loader2, CheckCircle2, ShieldCheck, RefreshCw, Compass } from "lucide-react";
+import { UserPlus, User, Mail, Lock, Briefcase, ScanFace, Loader2, CheckCircle2, ShieldCheck, RefreshCw, Compass, AlertCircle } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { biometricsApi, usersApi } from "../lib/api";
 
@@ -30,6 +30,7 @@ export function Register() {
   const [livenessToken, setLivenessToken] = useState<string | null>(null);
   const [capturedImageBase64, setCapturedImageBase64] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [registrationError, setRegistrationError] = useState<string | null>(null);
   const [framesPassedForCurrentPose, setFramesPassedForCurrentPose] = useState(0);
 
   // Active Motion Verification Runner
@@ -99,6 +100,7 @@ export function Register() {
   };
 
   const handleStartBiometrics = async () => {
+    setRegistrationError(null);
     try {
       setScanState("scanning");
       setCurrentStepIndex(0);
@@ -108,12 +110,15 @@ export function Register() {
       setFramesPassedForCurrentPose(0);
     } catch (err: any) {
       setScanState("idle");
-      toast.error(err.message || "Failed to initialize motion challenges. Is backend running?");
+      const message = err.message || "Failed to initialize motion challenges. Is backend running?";
+      setRegistrationError(message);
+      toast.error(message);
     }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    setRegistrationError(null);
     if (scanState !== "success" || !livenessToken || !capturedImageBase64) {
       toast.error("Please complete the 3D Motion Challenge to enroll biometrics.");
       return;
@@ -142,7 +147,9 @@ export function Register() {
       toast.success("Registration complete! Your biometric profile has been created.");
       navigate("/login");
     } catch (err: any) {
-      toast.error(err.message || "Registration failed. Please try again.");
+      const message = err.message || "Registration failed. Please try again.";
+      setRegistrationError(message);
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -156,10 +163,10 @@ export function Register() {
       <div className="absolute top-[20%] left-[80%] w-[35%] h-[35%] bg-accent rounded-full blur-[140px] opacity-20 pointer-events-none" />
       <div className="absolute bottom-[20%] right-[70%] w-[45%] h-[45%] bg-accent rounded-full blur-[120px] opacity-10 pointer-events-none" />
 
-      <div className="glass-panel w-full max-w-6xl flex flex-col lg:flex-row relative z-10 shadow-2xl">
+      <div className="glass-panel w-full max-w-6xl rounded-3xl flex flex-col lg:flex-row relative z-10 shadow-2xl overflow-hidden">
         
         {/* Left Side: Biometric Registration & 3D Motion Wizard */}
-        <div className="w-full lg:w-5/12 p-4 md:p-8 border-b lg:border-b-0 lg:border-r border-glass-border flex flex-col items-center justify-center relative bg-surface/30 overflow-y-auto min-h-[500px]">
+        <div className="w-full lg:w-5/12 p-5 sm:p-8 border-b lg:border-b-0 lg:border-r border-glass-border flex flex-col items-center justify-center relative bg-surface/30 overflow-y-auto min-h-[500px]">
           <div className="text-center mb-4">
             <h2 className="text-2xl font-bold text-text-main flex items-center justify-center gap-2">
               <ScanFace className="text-accent" size={28} />
@@ -188,8 +195,7 @@ export function Register() {
           )}
 
           <div 
-            className="relative w-full max-w-[300px] aspect-[3/4] overflow-hidden bg-black/80 ring-1 ring-glass-border shadow-2xl transition-all"
-            style={{ clipPath: "ellipse(50% 50% at 50% 50%)" }}
+            className="relative w-full max-w-[300px] aspect-[3/4] overflow-hidden rounded-[50%] bg-black/80 ring-1 ring-glass-border shadow-2xl transition-all"
           >
             {/* Webcam Feed */}
             <Webcam
@@ -299,7 +305,7 @@ export function Register() {
         </div>
 
         {/* Right Side: Standard Registration Form */}
-        <div className="w-full lg:w-7/12 p-8 lg:p-12 flex flex-col justify-center bg-surface/50 overflow-y-auto min-h-[500px]">
+        <div className="w-full lg:w-7/12 p-5 sm:p-8 lg:p-12 flex flex-col justify-center bg-surface/50 overflow-y-auto min-h-[500px]">
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-2">
               <ShieldCheck className="text-accent" size={32} />
@@ -384,6 +390,13 @@ export function Register() {
               </div>
               <p className="text-xs text-text-muted mt-2">Must be at least 8 characters long.</p>
             </div>
+
+            {registrationError && (
+              <div className="flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs leading-relaxed text-red-300" role="alert" aria-live="polite">
+                <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                <span>{registrationError}</span>
+              </div>
+            )}
 
             <button 
               type="submit" 
