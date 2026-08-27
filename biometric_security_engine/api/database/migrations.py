@@ -1,41 +1,97 @@
-import sqlite3
-from pathlib import Path
-import sys
+from __future__ import annotations
 
-# Ensure AI engine root is on sys.path
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "biometric_security.db"
+import argparse
+from typing import Any
 
-def run_migrations():
-    print(f"Running migrations on {DB_PATH}")
-    if not DB_PATH.exists():
-        print("Database not found. Initializing via SQLAlchemy first...")
-        return
-        
-    conn = sqlite3.connect(str(DB_PATH))
-    cur = conn.cursor()
-    
-    # 1. Create system_settings table
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS system_settings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            key TEXT UNIQUE NOT NULL,
-            value TEXT NOT NULL,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table, Text, inspect, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.schema import Index
+
+try:
+    from .connection import _create_engine
+    from .models import Base
+    from ..config import settings
+except ImportError:  # Supports ``python api/database/migrations.py``.
+    from api.database.connection import _create_engine
+    from api.database.models import Base
+    from api.config import settings
+
+
+MIGRATION_METADATA = MetaData()
+SYSTEM_SETTINGS = Table(
+    "system_settings",
+    MIGRATION_METADATA,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("key", String(255), unique=True, nullable=False),
+    Column("value", Text, nullable=False),
+    Column("updated_at", DateTime, server_default=text("CURRENT_TIMESTAMP"), nullable=False),
+)
+
+INDEX_DEFINITIONS = (
+    ("session_attendance_records", "idx_session_attendance_session_id", ("session_id",)),
+    ("session_attendance_records", "idx_session_attendance_student_id", ("student_id",)),
+    ("users", "idx_users_email", ("email",)),
+    ("users", "idx_users_role", ("role",)),
+    ("academic_sessions", "idx_academic_sessions_status", ("status",)),
+    ("projects", "idx_projects_status", ("status",)),
+)
+
+
+def _create_indexes(connection: Any) -> list[str]:
+    inspector = inspect(connection)
+    created: list[str] = []
+    for table_name, index_name, columns in INDEX_DEFINITIONS:
+        if not inspector.has_table(table_name):
+            continue
+        available_columns = {column["name"] for column in inspector.get_columns(table_name)}
+        if not set(columns).issubset(available_columns):
+            continue
+        Index(index_name, *[Base.metadata.tables[table_name].c[column] for column in columns]).create(
+            bind=connection,
+            checkfirst=True,
         )
-    ''')
-    
-    # 2. Add missing indexes for performance
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_session_attendance_session_id ON session_attendance_records(session_id);")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_session_attendance_student_id ON session_attendance_records(student_id);")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_academic_sessions_status ON academic_sessions(status);")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);")
-    
-    conn.commit()
-    conn.close()
-    print("Migrations applied successfully.")
+        created.append(index_name)
+    return created
+
+
+def run_migrations(database_url: str | None = None) -> dict[str, Any]:
+    """Create/update application tables and indexes for any supported SQLAlchemy URL."""
+    selected_url = database_url or settings.database_url
+    migration_engine: Engine = _create_engine(selected_url)
+
+    try:
+        Base.metadata.create_all(bind=migration_engine)
+        MIGRATION_METADATA.create_all(bind=migration_engine, checkfirst=True)
+        with migration_engine.begin() as connection:
+            indexes = _create_indexes(connection)
+            if migration_engine.dialect.name == "postgresql":
+                database = connection.execute(text("SELECT current_database()")).scalar_one_or_none()
+            else:
+                database = migration_engine.url.database
+    finally:
+        migration_engine.dispose()
+
+    return {
+        "database": database,
+        "dialect": migration_engine.dialect.name,
+        "system_settings": True,
+        "indexes": indexes,
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run portable Secure-FEPRH database migrations.")
+    parser.add_argument(
+        "--database-url",
+        default=None,
+        help="SQLAlchemy database URL. Defaults to DATABASE_URL/settings.database_url.",
+    )
+    args = parser.parse_args()
+    result = run_migrations(args.database_url)
+    print("Migrations applied successfully:")
+    for key, value in result.items():
+        print(f"  {key}: {value}")
+
 
 if __name__ == "__main__":
-    run_migrations()
+    main()

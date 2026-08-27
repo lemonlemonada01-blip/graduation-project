@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import sys
+
+import pytest
 from pathlib import Path
 
 import numpy as np
@@ -60,11 +62,64 @@ def test_embedding_validation_and_corrupt_row_skip():
     from biometric_security_engine.core.face_engine import BiometricFaceEngine
 
     engine = BiometricFaceEngine()
-    valid = np.zeros(128, dtype=float).tolist()
+    valid = np.ones(128, dtype=float).tolist()
     assert engine.verify_identity(valid, valid) == (True, 0.0)
     result = engine.search_1_to_n(valid, {"bad": [0.0], "good": valid})
     assert result["authenticated"] is True
     assert result["student_id"] == "good"
+
+
+def test_aes256_embedding_round_trip_and_legacy_read():
+    from biometric_security_engine.api.services import biometric_service
+
+    vector = np.linspace(0.01, 1.28, 128, dtype=float).tolist()
+    encrypted = biometric_service.encrypt_vector(vector)
+    assert encrypted.startswith("v2.")
+    assert np.allclose(biometric_service.decrypt_vector(encrypted), vector, atol=1e-6)
+
+    legacy = biometric_service._LEGACY_FERNET.encrypt(
+        ",".join(map(str, vector)).encode("utf-8")
+    )
+    assert np.allclose(
+        biometric_service.decrypt_vector(legacy.decode("utf-8")),
+        vector,
+        atol=1e-6,
+    )
+
+
+def test_portable_migration_runner_sqlite(tmp_path):
+    from biometric_security_engine.api.database.migrations import run_migrations
+
+    result = run_migrations(f"sqlite:///{tmp_path / 'migration.db'}")
+    assert result["dialect"] == "sqlite"
+    assert result["system_settings"] is True
+    assert "idx_users_email" in result["indexes"]
+
+
+def test_postgresql_url_engine_options():
+    from biometric_security_engine.api.database.connection import _create_engine
+
+    neon = _create_engine("postgresql://u:p@ep-test.eu-central-1.aws.neon.tech/db")
+    local = _create_engine("postgresql://u:p@localhost/db")
+    try:
+        assert neon.url.drivername == "postgresql+psycopg2"
+        assert neon.url.query.get("sslmode") == "require"
+        assert local.url.drivername == "postgresql+psycopg2"
+        assert local.url.query.get("sslmode") is None
+    finally:
+        neon.dispose()
+        local.dispose()
+
+
+def test_optional_postgresql_migration_runner():
+    database_url = os.getenv("TEST_POSTGRES_URL")
+    if not database_url:
+        pytest.skip("Set TEST_POSTGRES_URL to run a live PostgreSQL migration test")
+    from biometric_security_engine.api.database.migrations import run_migrations
+
+    result = run_migrations(database_url)
+    assert result["dialect"] == "postgresql"
+    assert result["system_settings"] is True
 
 
 def test_live_api_import():

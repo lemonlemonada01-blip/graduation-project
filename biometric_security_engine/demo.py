@@ -51,7 +51,7 @@ def test_authentication(student_id: str, img_path: str, expect_spoof: bool = Fal
 if __name__ == "__main__":
     print("NOTE: You must have the FastAPI server running via `uvicorn api.main:app --reload` first.")
     # Please provide real images of yourself to test accuracy. 
-    # For now, if you run this, it will fail because 'test_live.jpg' is just a circle, not a real human face that face_recognition can detect.
+    # For now, if you run this, it will fail because 'test_live.jpg' is just a circle, not a real human face that the detector can recognize.
     # To truly test this, replace "test_live.jpg" and "test_spoof.jpg" with your own photos!
     
     # generate_dummy_images()
